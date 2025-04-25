@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Memory Pattern Game</title>
+  <style>
+    /* Basic reset and centering */
+    body {
+      display: flex;              /* Use flexbox for easy centering */
+      flex-direction: column;     /* Stack header, grid, controls vertically */
+      align-items: center;        /* Center horizontally */
+      justify-content: center;    /* Center vertically */
+      min-height: 100vh;          /* Full viewport height */
+      font-family: sans-serif;
+      background: #f0f0f0;
+      margin: 0;
+    }
+
+    /* Game title spacing */
+    h1 {
+      margin-bottom: 20px;
+    }
+
+    /* Grid container for tiles */
+    #game {
+      display: grid;
+      grid-template-columns: repeat(3, 100px); /* 3 columns of equal width */
+      grid-gap: 10px;                           /* Space between tiles */
+      margin-bottom: 20px;
+    }
+
+    /* Individual tile styling */
+    .tile {
+      width: 100px;
+      height: 100px;
+      background: #ccc;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background 0.2s; /* Smooth color change */
+    }
+
+    /* Active (flashed) tile state */
+    .tile.active {
+      background: #4caf50; /* Highlight color */
+    }
+
+    /* Start button styling */
+    #startButton {
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      border: none;
+      background: #2196f3;
+      color: white;
+      border-radius: 5px;
+      transition: background 0.2s;
+    }
+    #startButton:hover {
+      background: #1976d2; /* Darker on hover */
+    }
+
+    /* Status text below controls */
+    #status {
+      margin-top: 10px;
+      font-size: 18px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Memory Pattern Game</h1>
+  <div id="game"></div>
+  <button id="startButton">Start Game</button>
+  <div id="status"></div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      // Configuration
+      const gridSize = 3; // Number of rows and columns
+      const totalTiles = gridSize * gridSize;
+
+      // DOM references
+      const gameContainer = document.getElementById('game');
+      const startButton = document.getElementById('startButton');
+      const statusDiv = document.getElementById('status');
+
+      // Game state variables
+      let sequence = [];        // The generated pattern to remember
+      let userSequence = [];    // What the user has tapped
+      let level = 1;            // Current level (controls pattern length)
+      let acceptingInput = false; // Flag: is user input allowed?
+
+      // --- INITIAL SETUP ---
+      // Dynamically create the grid tiles and attach click handlers
+      for (let i = 0; i < totalTiles; i++) {
+        const tile = document.createElement('div');
+        tile.classList.add('tile');
+        tile.dataset.index = i; // Store tile index for reference
+        tile.addEventListener('click', () => handleTileClick(i));
+        gameContainer.appendChild(tile);
+      }
+
+      // Start or restart the game
+      function startGame() {
+        level = 1;
+        statusDiv.textContent = `Level ${level}`;
+        nextRound();
+      }
+
+      // Setup and play the next round
+      function nextRound() {
+        userSequence = [];                        // Reset user's taps
+        sequence = generateSequence(level + 2);   // Pattern grows with level
+        playSequence();                           // Show it to the user
+      }
+
+      // Generate a random sequence of tile indices
+      function generateSequence(length) {
+        return Array.from(
+          { length },
+          () => Math.floor(Math.random() * totalTiles)
+        );
+      }
+
+      // Display the sequence by flashing tiles in order
+      function playSequence() {
+        acceptingInput = false;           // Temporarily block taps
+        statusDiv.textContent = 'Watch the sequence!';
+
+        sequence.forEach((index, i) => {
+          // Schedule each activation/deactivation
+          setTimeout(() => activateTile(index), i * 1000);
+          setTimeout(() => deactivateTile(index), i * 1000 + 600);
+        });
+
+        // After the full sequence, allow user input
+        setTimeout(() => {
+          acceptingInput = true;
+          statusDiv.textContent = 'Your turn!';
+        }, sequence.length * 1000);
+      }
+
+      // Add 'active' class to flash a tile
+      function activateTile(index) {
+        const tile = document.querySelector(`.tile[data-index='${index}']`);
+        tile.classList.add('active');
+      }
+
+      // Remove 'active' class to turn tile back off
+      function deactivateTile(index) {
+        const tile = document.querySelector(`.tile[data-index='${index}']`);
+        tile.classList.remove('active');
+      }
+
+      // Handle user's tile taps
+      function handleTileClick(index) {
+        if (!acceptingInput) return;      // Ignore taps if not in input phase
+
+        userSequence.push(index);          // Record tap
+        activateTile(index);               // Flash tile on tap
+        setTimeout(() => deactivateTile(index), 200); // Quick flash feedback
+
+        const step = userSequence.length - 1;
+        // Check correctness of this step
+        if (userSequence[step] !== sequence[step]) {
+          return gameOver();               // End game on mistake
+        }
+
+        // If full sequence matched, advance level
+        if (userSequence.length === sequence.length) {
+          level++;
+          statusDiv.textContent = `Correct! Level up to ${level}`;
+          setTimeout(nextRound, 1000);   // Pause briefly before next
+        }
+      }
+
+      // Handle end-of-game logic
+      function gameOver() {
+        acceptingInput = false;
+        statusDiv.textContent = `Game Over! You reached level ${level}.`;
+      }
+
+      // Wire up start button
+      startButton.addEventListener('click', startGame);
+    });
+  </script>
+</body>
+</html>
