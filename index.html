@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Rummy Assistant (Pure Sequences Excluding Wild When Unneeded)</title>
+  <title>Rummy Assistant (Full Search: Pure Sets &amp; Sequences)</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -66,23 +66,22 @@
   </style>
 </head>
 <body>
-  <h1>Rummy Assistant (Pure Sequences Excluding Wild When Unneeded)</h1>
+  <h1>Rummy Assistant (Full Search: Pure Sets &amp; Sequences)</h1>
   <p>
-    Enter your cards by suit, choose the <strong>wild card rank</strong>, and specify how many pure Jokers (<strong>JOK</strong>) you have (0–2).  
-    Now, when forming <strong>pure sequences</strong> in each suit, the assistant will:
-    <ul>
-      <li>First attempt to build runs (length ≥ 3) using only non‐wild cards.</li>
-      <li>Only if no run ≥ 3 exists without the wild, will it include a wild‐rank card as part of a run.</li>
-      <li>This avoids “wasting” the wild in a suit when you can already form a pure run of length ≥ 3 without it.</li>
-    </ul>
-    The assistant then:
+    Enter your cards by suit (comma‐separated), choose the <strong>wild card rank</strong>, and specify how many pure Jokers (<strong>JOK</strong>) you have (0–2).  
+    The assistant will:
     <ol>
-      <li>Lists <strong>all pure sequences</strong> found under these rules (length ≥ 3). Removes them.</li>
-      <li>Lists <strong>all pure sets</strong> (three or more of same rank). Removes them.</li>
-      <li>Repeatedly finds the <strong>optimal impure sequence</strong> (length ≥ 3) minimizing leftover points—using Jokers and any remaining wilds—removing each.</li>
-      <li>Any cards left whose rank ≠ wild‐rank are “leftover” and shown; wild‐rank and Joker leftovers are excluded (0 points).'  
-      <li>Points for shown leftover: A/10/J/Q/K=10; 2–9=face value; capped at 80.</li>
+      <li>Recursively search **all combinations** of:
+        <ul>
+          <li><strong>Pure sequences</strong> of length ≥ 3 in each suit—built exclusively from non‐wild cards (i.e. ignoring designated wild‐rank unless no normal‐only sequence ≥ 3 exists).</li>
+          <li><strong>Pure sets</strong> of length ≥ 3 (three or more cards sharing the same rank).</li>
+        </ul>
+      </li>
+      <li>For each such “pure‐group combination,” remove those cards and then compute the **optimal impure sequence** (length ≥ 3) using Jokers + any remaining wild‐rank cards to minimize leftover‐points.</li>
+      <li>Among all branches, pick the one that yields the **lowest final leftover‐point total**.</li>
+      <li>Any cards left after pure+impure grouping whose rank equals the designated wild are automatically excluded (0 points). Other leftovers contribute: A/10/J/Q/K = 10; 2 – 9 = face value; cap at 80.</li>
     </ol>
+    This ensures that, for example, an “A♣” won’t be used in a pure run if it’s needed in a pure set (or to minimize leftover points).
   </p>
 
   <div class="input-group">
@@ -133,10 +132,9 @@
   <div id="result"></div>
 
   <script>
-    // ---------------------------------------------------
-    // Utility Functions & Sequence/Set‐Finding / Evaluation
-    // ---------------------------------------------------
-
+    // ------------------------------
+    // UTILITY & EVALUATION LOGIC
+    // ------------------------------
     const rankMap = {
       'A': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6,
       '7': 7, '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13
@@ -153,109 +151,108 @@
 
     function cardPointValue(card, designatedWild) {
       if (card === 'JOK') return 0;
-      const rank = getRank(card);
-      if (rank === designatedWild) return 0;
-      if (['A','10','J','Q','K'].includes(rank)) return 10;
-      return parseInt(rank, 10);
+      const r = getRank(card);
+      if (r === designatedWild) return 0;
+      if (['A','10','J','Q','K'].includes(r)) return 10;
+      return parseInt(r, 10);
     }
 
-    // ------- Find ALL Pure Sequences, Excluding Wild When Unneeded (length ≥ 3) -------
-    function findAllPureSequences(cards, designatedWild) {
-      const sequences = [];
-      const suitOrder = ['♣','♦','♥','♠'];
+    // 1) FIND ALL PURE SEQUENCES (length ≥ 3), EXCLUDING WILD UNLESS REQUIRED
+    function findPureSequencesForSuit(cards, suit, designatedWild) {
+      // Step A: gather “normal” cards of this suit (rank ≠ wild, ≠ 'JOK')
+      const normalList = cards
+        .filter(c => c !== 'JOK' && getSuit(c) === suit && getRank(c) !== designatedWild)
+        .map(c => ({ card: c, num: rankMap[getRank(c)] }))
+        .filter(o => o.num !== undefined)
+        .sort((a, b) => a.num - b.num);
 
-      suitOrder.forEach(suit => {
-        // 1) Collect normal cards (rank ≠ wild, c ≠ JOK) of this suit
-        const normalSuitCards = cards
-          .filter(c => typeof c === 'string' && c !== 'JOK' && getSuit(c) === suit && getRank(c) !== designatedWild)
+      const pureSequences = [];
+
+      // (1) First pass: find runs of length ≥ 3 among normalList alone
+      const nums = normalList.map(o => o.num);
+      let i = 0;
+      while (i < nums.length) {
+        let run = [ normalList[i] ];
+        let prev = nums[i];
+        let j = i + 1;
+        while (j < nums.length && nums[j] === prev + 1) {
+          run.push(normalList[j]);
+          prev = nums[j];
+          j++;
+        }
+        if (run.length >= 3) {
+          pureSequences.push(run.map(o => o.card));
+          i = j; // skip past this run
+        } else {
+          i++;
+        }
+      }
+
+      // (2) If NO run ≥ 3 found among normal cards, allow use of wild‐rank card(s) to build a run
+      if (pureSequences.length === 0) {
+        // gather ALL suit cards (including wild‐rank) except 'JOK'
+        const allList = cards
+          .filter(c => c !== 'JOK' && getSuit(c) === suit)
           .map(c => ({ card: c, num: rankMap[getRank(c)] }))
           .filter(o => o.num !== undefined)
           .sort((a, b) => a.num - b.num);
 
-        // Scan for runs of length ≥ 3 using only normalSuitCards
-        const normalNums = normalSuitCards.map(o => o.num);
-        let i = 0;
-        while (i < normalNums.length) {
-          let run = [ normalSuitCards[i] ];
-          let prev = normalNums[i];
-          let j = i + 1;
-          while (j < normalNums.length && normalNums[j] === prev + 1) {
-            run.push(normalSuitCards[j]);
-            prev = normalNums[j];
-            j++;
+        const allNums = allList.map(o => o.num);
+        let x = 0;
+        while (x < allNums.length) {
+          let run = [ allList[x] ];
+          let prev = allNums[x];
+          let y = x + 1;
+          while (y < allNums.length && allNums[y] === prev + 1) {
+            run.push(allList[y]);
+            prev = allNums[y];
+            y++;
           }
           if (run.length >= 3) {
-            sequences.push(run.map(o => o.card));
-            i = j; // skip past this run
+            pureSequences.push(run.map(o => o.card));
+            x = y;
           } else {
-            i++;
+            x++;
           }
         }
+      }
 
-        // 2) Only if no run ≥ 3 was found at all, attempt runs that include the wild‐rank card(s)
-        //    i.e. use suit‐cards where rank === designatedWild + normal cards
-        //    BUT ONLY if normal runs < 3 in length for this suit
-        // Check if any normal‐only run ≥ 3 existed
-        const foundNormalRun = sequences.some(seq => {
-          return seq.some(c => getSuit(c) === suit);
-        });
-        if (!foundNormalRun) {
-          // Collect all suit cards (excluding JOK), including wild
-          const allSuitCards = cards
-            .filter(c => typeof c === 'string' && c !== 'JOK' && getSuit(c) === suit)
-            .map(c => ({ card: c, num: rankMap[getRank(c)] }))
-            .filter(o => o.num !== undefined)
-            .sort((a, b) => a.num - b.num);
-
-          const allNums = allSuitCards.map(o => o.num);
-          let x = 0;
-          while (x < allNums.length) {
-            let run = [ allSuitCards[x] ];
-            let prev = allNums[x];
-            let y = x + 1;
-            while (y < allNums.length && allNums[y] === prev + 1) {
-              run.push(allSuitCards[y]);
-              prev = allNums[y];
-              y++;
-            }
-            if (run.length >= 3) {
-              sequences.push(run.map(o => o.card));
-              x = y;
-            } else {
-              x++;
-            }
-          }
-        }
-      });
-
-      return sequences;
+      return pureSequences; // array of arrays of card‐strings
     }
 
-    // ------- Find ALL Pure Sets (length ≥ 3) -------
-    function findAllPureSets(cards, designatedWild) {
+    function findAllPureSequences(cards, designatedWild) {
+      const result = [];
+      ['♣','♦','♥','♠'].forEach(suit => {
+        const seqs = findPureSequencesForSuit(cards, suit, designatedWild);
+        result.push(...seqs);
+      });
+      return result;
+    }
+
+    // 2) FIND ALL PURE SETS (length ≥ 3)
+    function findAllPureSets(cards) {
+      const buckets = {};
+      cards.forEach(c => {
+        if (c === 'JOK') return;
+        const r = getRank(c);
+        if (!buckets[r]) buckets[r] = [];
+        buckets[r].push(c);
+      });
       const sets = [];
-      const rankBuckets = {};
-      cards.forEach(card => {
-        const r = getRank(card);
-        if (!r) return; // skip JOK
-        if (!rankBuckets[r]) rankBuckets[r] = [];
-        rankBuckets[r].push(card);
-      });
-      Object.keys(rankBuckets).forEach(r => {
-        const bucket = rankBuckets[r];
-        if (bucket.length >= 3) {
-          sets.push(bucket.slice());
+      Object.keys(buckets).forEach(r => {
+        if (buckets[r].length >= 3) {
+          sets.push(buckets[r].slice());
         }
       });
-      return sets;
+      return sets; // array of arrays
     }
 
-    // ------- Find Optimal Impure Sequence (length ≥ 3) -------
-    function findImpureSequence(cards, designatedRank) {
+    // 3) FIND OPTIMAL IMPURE SEQUENCE ON A GIVEN SET OF CARDS
+    function findImpureSequence(cards, designatedWild) {
       const pureJokers = cards.filter(c => c === 'JOK').length;
-      const designatedCards = cards.filter(c => typeof c === 'string' && getRank(c) === designatedRank);
+      const designatedCards = cards.filter(c => c !== 'JOK' && getRank(c) === designatedWild);
       const wildcardCount = pureJokers + designatedCards.length;
-      const nonWildCards = cards.filter(c => c !== 'JOK' && getRank(c) !== designatedRank);
+      const nonWildCards = cards.filter(c => c !== 'JOK' && getRank(c) !== designatedWild);
 
       let best = {
         run: [],
@@ -263,18 +260,17 @@
         runLength: 0
       };
 
-      const suitOrder = ['♣','♦','♥','♠'];
-      suitOrder.forEach(suit => {
+      ['♣','♦','♥','♠'].forEach(suit => {
         const suitMap = {};
         nonWildCards.forEach(c => {
-          if (typeof c === 'string' && getSuit(c) === suit) {
+          if (getSuit(c) === suit) {
             const num = rankMap[getRank(c)];
             if (num !== undefined) suitMap[num] = c;
           }
         });
         const ranks = Object.keys(suitMap).map(n => parseInt(n)).sort((a,b) => a - b);
-
         const maxLen = ranks.length + wildcardCount;
+
         for (let windowSize = maxLen; windowSize >= 3; windowSize--) {
           for (let start = 1; start <= 14 - windowSize; start++) {
             const end = start + windowSize - 1;
@@ -288,6 +284,7 @@
             }
             const missing = windowSize - presentCount;
             if (missing <= wildcardCount) {
+              // Build candidate run using pure Jokers first, then designated cards
               let usedJ = 0, usedD = 0;
               const runCards = presentCards.slice();
               for (let k = 0; k < missing; k++) {
@@ -300,6 +297,7 @@
                 }
               }
 
+              // Evaluate leftover if we remove runCards
               let temp = cards.slice();
               runCards.forEach(cd => {
                 const idx = temp.indexOf(cd);
@@ -307,11 +305,11 @@
               });
 
               const leftoverPts = temp.reduce((sum, c) =>
-                sum + cardPointValue(c, designatedRank), 0
+                sum + cardPointValue(c, designatedWild), 0
               );
               if (
-                leftoverPts < best.leftoverPoints
-                || (leftoverPts === best.leftoverPoints && runCards.length > best.runLength)
+                leftoverPts < best.leftoverPoints ||
+                (leftoverPts === best.leftoverPoints && runCards.length > best.runLength)
               ) {
                 best = {
                   run: runCards,
@@ -324,65 +322,151 @@
         }
       });
 
-      if (best.run.length < 3) return [];
-      return best.run;
+      return best.run.length >= 3 ? best.run : [];
     }
 
-    // ------- Full Evaluation: Pure Sequences + Pure Sets + Impure -------
-    function evaluateHand(cards, designatedRank) {
-      // 1) Find all pure sequences, excluding wild when unneeded
-      const pureSequences = findAllPureSequences(cards, designatedRank);
+    // 4) RECURSIVE SEARCH: PICK PURE‐GROUP COMBINATIONS THEN IMPURE
+    function deepCopyArray(arr) {
+      return arr.slice();
+    }
 
-      // 2) Remove all pure sequence cards
-      let working = cards.slice();
-      pureSequences.forEach(seq => {
-        seq.forEach(card => {
-          const idx = working.indexOf(card);
-          if (idx !== -1) working.splice(idx, 1);
-        });
+    function arrayMinus(source, toRemove) {
+      // Remove each element of toRemove (one occurrence) from source, return new array
+      const out = source.slice();
+      toRemove.forEach(el => {
+        const idx = out.indexOf(el);
+        if (idx !== -1) out.splice(idx, 1);
       });
+      return out;
+    }
 
-      // 3) Find all pure sets
-      const pureSets = findAllPureSets(working, designatedRank);
-      // Remove all pure set cards
-      pureSets.forEach(setGroup => {
-        setGroup.forEach(card => {
-          const idx = working.indexOf(card);
-          if (idx !== -1) working.splice(idx, 1);
-        });
-      });
+    function searchPureGroups(working, designatedWild) {
+      // working: array of cards remaining
+      // Return an object with:
+      //   { pureSeqs: [...], pureSets: [...], impureSeqs: [...], leftover: [...], points: n }
+      //
+      // We will recursively try all ways to pick (one) pure sequence or (one) pure set from the working cards,
+      // then call ourselves on the reduced hand. We also consider “stop picking pure groups” and move to impure stage.
 
-      // 4) Repeatedly find optimal impure sequences
-      const impureSequences = [];
-      while (true) {
-        const nextImpure = findImpureSequence(working, designatedRank);
-        if (nextImpure.length < 3) break;
-        impureSequences.push(nextImpure);
-        nextImpure.forEach(card => {
-          const idx = working.indexOf(card);
-          if (idx !== -1) working.splice(idx, 1);
-        });
+      // 1) Base case: No pure sequence or pure set available → move to impure stage
+      const allPureSeqs = findAllPureSequences(working, designatedWild);
+      const allPureSets = findAllPureSets(working);
+
+      if (allPureSeqs.length === 0 && allPureSets.length === 0) {
+        // Directly go to impure stage on ‘working’
+        const impureResult = extractImpure(working, designatedWild);
+        return {
+          pureSeqs: [],
+          pureSets: [],
+          impureSeqs: impureResult.impureSeqs,
+          leftover: impureResult.leftover,
+          points: impureResult.points
+        };
       }
 
-      // 5) Filter leftover: exclude any card whose rank == designatedRank
-      const leftover = working.filter(c => getRank(c) !== designatedRank);
+      // 2) Otherwise, try all possibilities of picking exactly ONE pure group (seq or set),
+      //    then recursively search deeper.
 
-      // 6) Compute leftover points, cap at 80
-      let pts = leftover.reduce((sum, c) => sum + cardPointValue(c, designatedRank), 0);
+      let bestOutcome = null;
+
+      // Helper to merge results from recursive step
+      function mergeResult(chosenGroup, remainder, subResult, isSequence) {
+        // subResult has { pureSeqs:[], pureSets:[], impureSeqs:[], leftover:[], points: n }
+        const newPureSeqs = subResult.pureSeqs.slice();
+        const newPureSets = subResult.pureSets.slice();
+
+        if (isSequence) {
+          newPureSeqs.unshift(chosenGroup);
+        } else {
+          newPureSets.unshift(chosenGroup);
+        }
+
+        return {
+          pureSeqs: newPureSeqs,
+          pureSets: newPureSets,
+          impureSeqs: subResult.impureSeqs,
+          leftover: subResult.leftover,
+          points: subResult.points
+        };
+      }
+
+      // (A) Try each pure sequence
+      for (const seq of allPureSeqs) {
+        const remaining = arrayMinus(working, seq);
+        const subResult = searchPureGroups(remaining, designatedWild);
+        const candidate = mergeResult(seq, remaining, subResult, true);
+        if (
+          !bestOutcome ||
+          candidate.points < bestOutcome.points
+        ) {
+          bestOutcome = candidate;
+        }
+      }
+
+      // (B) Try each pure set
+      for (const setGrp of allPureSets) {
+        const remaining = arrayMinus(working, setGrp);
+        const subResult = searchPureGroups(remaining, designatedWild);
+        const candidate = mergeResult(setGrp, remaining, subResult, false);
+        if (
+          !bestOutcome ||
+          candidate.points < bestOutcome.points
+        ) {
+          bestOutcome = candidate;
+        }
+      }
+
+      // (C) Also consider “skip picking any pure group now” → go directly to impure on this working
+      const impureResult = extractImpure(working, designatedWild);
+      const skipCandidate = {
+        pureSeqs: [],
+        pureSets: [],
+        impureSeqs: impureResult.impureSeqs,
+        leftover: impureResult.leftover,
+        points: impureResult.points
+      };
+      if (
+        !bestOutcome ||
+        skipCandidate.points < bestOutcome.points
+      ) {
+        bestOutcome = skipCandidate;
+      }
+
+      return bestOutcome;
+    }
+
+    // 5) EXTRACT IMPURE SEQUENCES FROM A SET OF CARDS (ALREADY PURE‐GROUPS REMOVED)
+    function extractImpure(working, designatedWild) {
+      let temp = working.slice();
+      const impureSeqs = [];
+      while (true) {
+        const nextImp = findImpureSequence(temp, designatedWild);
+        if (nextImp.length < 3) break;
+        impureSeqs.push(nextImp);
+        temp = arrayMinus(temp, nextImp);
+      }
+      // Now filter leftover: exclude any wild‐rank cards
+      const leftover = temp.filter(c => getRank(c) !== designatedWild);
+
+      // Compute points from leftover
+      let pts = leftover.reduce((sum, c) => sum + cardPointValue(c, designatedWild), 0);
       if (pts > 80) pts = 80;
 
       return {
-        pureSequences: pureSequences,
-        pureSets: pureSets,
-        impureSequences: impureSequences,
+        impureSeqs: impureSeqs,
         leftover: leftover,
         points: pts
       };
     }
 
-    // ---------------------------------------------------
-    // DOM & Event Handling
-    // ---------------------------------------------------
+    // 6) MAIN evaluateHand: calls searchPureGroups on full hand
+    function evaluateHand(cards, designatedWild) {
+      return searchPureGroups(cards, designatedWild);
+    }
+
+    // ------------------------------------
+    // DOM & EVENT HANDLING
+    // ------------------------------------
 
     const clubsInput     = document.getElementById('clubsInput');
     const diamondsInput  = document.getElementById('diamondsInput');
@@ -406,21 +490,22 @@
           .map(x => x + suitSymbol);
       }
 
+      // 1) Read inputs
       const clubsRaw    = clubsInput.value;
       const diamondsRaw = diamondsInput.value;
       const heartsRaw   = heartsInput.value;
       const spadesRaw   = spadesInput.value;
-      const wildRank    = wildRankSelect.value;   // e.g. "7" or ""
+      const wildRank    = wildRankSelect.value;   // e.g. "5" or ""
       const jokersRaw   = jokersInput.value.trim();
 
-      // Validate jokers count
+      // 2) Validate pure Jokers count
       const jokersCount = parseInt(jokersRaw, 10);
       if (isNaN(jokersCount) || jokersCount < 0 || jokersCount > 2) {
         resultDiv.innerHTML = '<span class="error">“Jokers” must be 0, 1, or 2.</span>';
         return;
       }
 
-      // Build cards array
+      // 3) Build full list of cards
       let cards = [];
       cards = cards.concat(
         parseSuit(clubsRaw, '♣'),
@@ -432,15 +517,15 @@
         cards.push('JOK');
       }
 
-      // Validate each card format
+      // 4) Validate card format
       const invalids = [];
       cards.forEach(c => {
         if (c === 'JOK') return;
-        const rank = getRank(c);
-        const suit = getSuit(c);
+        const r = getRank(c);
+        const s = getSuit(c);
         const validRanks = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
         const validSuits = ['♣','♦','♥','♠'];
-        if (!validRanks.includes(rank) || !validSuits.includes(suit)) {
+        if (!validRanks.includes(r) || !validSuits.includes(s)) {
           invalids.push(c);
         }
       });
@@ -452,50 +537,56 @@
         return;
       }
 
-      // Determine designatedRank
-      const designatedRank = wildRank || null;
+      // 5) Determine designatedWild (or null if none)
+      const designatedWild = wildRank || null;
 
-      // Evaluate
-      const evalResult = evaluateHand(cards, designatedRank);
+      // 6) Evaluate
+      const res = evaluateHand(cards, designatedWild);
 
-      // Build output
+      // 7) Build output
       let out = '';
+
+      // Pure sequences:
       out += '<div class="section-title">All Pure Sequences (length ≥ 3):</div>';
-      if (evalResult.pureSequences.length === 0) {
+      if (res.pureSeqs.length === 0) {
         out += '  None \n';
       } else {
-        evalResult.pureSequences.forEach(seq => {
+        res.pureSeqs.forEach(seq => {
           out += '  • ' + seq.join(', ') + '\n';
         });
       }
 
+      // Pure sets:
       out += '\n<div class="section-title">All Pure Sets (length ≥ 3):</div>';
-      if (evalResult.pureSets.length === 0) {
+      if (res.pureSets.length === 0) {
         out += '  None \n';
       } else {
-        evalResult.pureSets.forEach(setGroup => {
-          out += '  • ' + setGroup.join(', ') + '\n';
+        res.pureSets.forEach(setGrp => {
+          out += '  • ' + setGrp.join(', ') + '\n';
         });
       }
 
+      // Impure sequences:
       out += '\n<div class="section-title">All Impure Sequences (length ≥ 3):</div>';
-      if (evalResult.impureSequences.length === 0) {
+      if (res.impureSeqs.length === 0) {
         out += '  None \n';
       } else {
-        evalResult.impureSequences.forEach(seq => {
+        res.impureSeqs.forEach(seq => {
           out += '  • ' + seq.join(', ') + '\n';
         });
       }
 
+      // Leftover cards:
       out += '\n<div class="section-title">Leftover Cards (counted as points):</div>';
-      if (evalResult.leftover.length === 0) {
+      if (res.leftover.length === 0) {
         out += '  None \n';
       } else {
-        out += '  ' + evalResult.leftover.join(', ') + '\n';
+        out += '  ' + res.leftover.join(', ') + '\n';
       }
 
+      // Total points:
       out += '\n<div class="section-title">Total Points (capped at 80):</div>';
-      out += '  ' + evalResult.points + '\n';
+      out += '  ' + res.points + '\n';
 
       resultDiv.innerHTML = out;
     });
