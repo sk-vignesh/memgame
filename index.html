@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Two-Player Rummy with Auto-Grouping</title>
+  <title>Two-Player Rummy with Advanced Evaluation</title>
   <style>
     /* ------------------------ */
     /* Global / Layout Styling  */
@@ -142,20 +142,17 @@
   </style>
 </head>
 <body>
-  <h1>Two-Player Rummy with Auto-Grouping</h1>
+  <h1>Two-Player Rummy with Advanced Evaluation</h1>
   <p>
-    After the initial deal, any valid <strong>pure sets</strong> (three cards of the same rank) or 
-    <strong>pure sequences</strong> (three consecutive cards of the same suit, no Jokers) 
-    are automatically grouped. Then you can continue playing as usual:
+    After the initial deal, any valid <strong>pure sets</strong> or <strong>pure sequences</strong> 
+    are auto‐grouped. Jokers (“JOK”) act as wildcards only in the second sequence or impure sequences.  
+    The “Evaluate” button now:
+    <ol>
+      <li>Caps the total points at <strong>80</strong>.</li>
+      <li>Punishes any cards not in a <strong>first pure sequence</strong> of length ≥ 3 by counting them.</li>
+      <li>Also requires a <strong>second sequence (impure, can use Jokers)</strong> of length ≥ 3; any cards not in either sequence count.</li>
+    </ol>
   </p>
-  <ul>
-    <li>Draw from Deck or Discard.</li>
-    <li>Create new groups and drag cards into them.</li>
-    <li>Click “Validate Groups” to check each group (✓ = valid, ✗ = invalid).</li>
-    <li>Click “Sort” to group your hand by suit and sort within each suit.</li>
-    <li>Click “Evaluate” to see your current ungrouped‐card points total (A/10/J/Q/K = 10, numeric = face value, Joker = 0).</li>
-    <li>Once you end up with exactly 13 cards in groups and 1 in hand, click “Show”—your opponent’s ungrouped cards are scored, and the game ends.</li>
-  </ul>
   <div id="status">Initialising game…</div>
 
   <div class="game-area">
@@ -216,7 +213,7 @@
       </div>
 
       <div class="pile-display">
-        <!-- These are hidden placeholders so layout remains consistent -->
+        <!-- Hidden placeholders to keep layout consistent -->
         <div class="pile" style="visibility: hidden;">
           <h4>Discard Pile</h4>
           <div class="card" id="dummy-discard">?</div>
@@ -232,7 +229,7 @@
   <script>
     // ================================
     //      Two-Player Rummy JS
-    //      (with Auto-Grouping)
+    //      (with Advanced Evaluation)
     // ================================
     document.addEventListener('DOMContentLoaded', () => {
       // === Utility Functions ===
@@ -728,110 +725,6 @@
         return parseInt(rank, 10);
       }
 
-      // “Evaluate” simply sums points of all cards still in the player’s hand
-      function evaluatePoints(playerIdx) {
-        const player = gameState.players[playerIdx];
-        let total = 0;
-        player.hand.forEach(card => {
-          total += cardPointValue(card);
-        });
-        updateStatus(`${player.name} has ${total} points in ungrouped cards.`);
-      }
-
-      // Show / Scoring logic
-      function attemptShow(playerIdx) {
-        const player = gameState.players[playerIdx];
-        const handCount    = player.hand.length;                        
-        const groupedCount = player.groups.reduce((sum, grp) => sum + grp.length, 0);
-
-        // Valid if exactly 13 cards in groups and 1 in hand
-        if (groupedCount === 13 && handCount === 1) {
-          // Compute opponent’s points: sum of values of all cards in their hand
-          const oppIdx = 1 - playerIdx;
-          const oppHand = gameState.players[oppIdx].hand;
-          let points = 0;
-          oppHand.forEach(card => {
-            points += cardPointValue(card);
-          });
-
-          updateStatus(
-            `${player.name} has declared! ${gameState.players[oppIdx].name} scores ${points} points.`
-          );
-          disableButtons();
-          return;
-        }
-
-        alert('Invalid declaration. You must have exactly 13 cards grouped and 1 card in hand.');
-      }
-
-      // === Validation Logic ===
-
-      function validateGroup(cards) {
-        if (cards.length < 3) return false;
-
-        // Separate jokers from non-joker cards
-        const jokers = cards.filter(c => c === 'JOK');
-        const nonJokers = cards.filter(c => c !== 'JOK');
-
-        // If no non-joker cards, cannot form a valid group
-        if (nonJokers.length === 0) return false;
-
-        // Extract suits and ranks of non-joker cards
-        const suitsArr = nonJokers.map(c => c.slice(-1));
-        const ranksArr = nonJokers.map(c => c.slice(0, -1));
-
-        // 1) Check for Set: all non-jokers share same rank, distinct suits
-        const allSameRank = ranksArr.every(r => r === ranksArr[0]);
-        if (allSameRank) {
-          const uniqueSuits = new Set(suitsArr);
-          if (uniqueSuits.size === ranksArr.length) {
-            return true; // jokers can fill to any length ≥ 3
-          }
-        }
-
-        // 2) Check for Impure Sequence:
-        //    All non-joker cards share the same suit, 
-        //    and we can place them in a consecutive run with jokers filling gaps.
-        const suitForSequence = suitsArr[0];
-        if (!suitsArr.every(s => s === suitForSequence)) {
-          return false;
-        }
-
-        // Convert non-joker ranks into numbers
-        let numericRanks = ranksArr.map(r => {
-          if (r === 'A') return null; 
-          if (r === 'J') return 11;
-          if (r === 'Q') return 12;
-          if (r === 'K') return 13;
-          return parseInt(r, 10);
-        });
-
-        // If any non-joker is Q/K along with an A, treat A as 14; otherwise A = 1
-        let aceValue = 1;
-        if (ranksArr.includes('A') && (ranksArr.includes('Q') || ranksArr.includes('K'))) {
-          aceValue = 14;
-        }
-        numericRanks = numericRanks.map(n => (n === null ? aceValue : n));
-        numericRanks.sort((a, b) => a - b);
-
-        // Compute the numeric “span” from min to max
-        const minRank = numericRanks[0];
-        const maxRank = numericRanks[numericRanks.length - 1];
-        const neededSpan = maxRank - minRank + 1;
-
-        // If neededSpan ≤ total group length, jokers can fill in any gaps
-        if (neededSpan <= cards.length) {
-          return true;
-        }
-        return false;
-      }
-
-      function validateGroups(playerIdx) {
-        const player = gameState.players[playerIdx];
-        player.groupValidities = player.groups.map(groupArr => validateGroup(groupArr));
-        updateUI();
-      }
-
       // === Auto-Grouping Logic ===
 
       function autoGroup(playerIdx) {
@@ -914,6 +807,247 @@
         });
       }
 
+      // === Validation Logic ===
+
+      function validateGroup(cards) {
+        if (cards.length < 3) return false;
+
+        // Separate jokers from non-joker cards
+        const jokers = cards.filter(c => c === 'JOK');
+        const nonJokers = cards.filter(c => c !== 'JOK');
+
+        // If no non-joker cards, cannot form a valid group
+        if (nonJokers.length === 0) return false;
+
+        // Extract suits and ranks of non-joker cards
+        const suitsArr = nonJokers.map(c => c.slice(-1));
+        const ranksArr = nonJokers.map(c => c.slice(0, -1));
+
+        // 1) Check for Set: all non-jokers share same rank, distinct suits
+        const allSameRank = ranksArr.every(r => r === ranksArr[0]);
+        if (allSameRank) {
+          const uniqueSuits = new Set(suitsArr);
+          if (uniqueSuits.size === ranksArr.length) {
+            return true; // jokers can fill to any length ≥ 3
+          }
+        }
+
+        // 2) Check for Impure Sequence:
+        //    All non-joker cards share the same suit, 
+        //    and we can place them in a consecutive run with jokers filling gaps.
+        const suitForSequence = suitsArr[0];
+        if (!suitsArr.every(s => s === suitForSequence)) {
+          return false;
+        }
+
+        // Convert non-joker ranks into numbers
+        let numericRanks = ranksArr.map(r => {
+          if (r === 'A') return null; 
+          if (r === 'J') return 11;
+          if (r === 'Q') return 12;
+          if (r === 'K') return 13;
+          return parseInt(r, 10);
+        });
+
+        // If any non-joker is Q/K along with an A, treat A as 14; otherwise A = 1
+        let aceValue = 1;
+        if (ranksArr.includes('A') && (ranksArr.includes('Q') || ranksArr.includes('K'))) {
+          aceValue = 14;
+        }
+        numericRanks = numericRanks.map(n => (n === null ? aceValue : n));
+        numericRanks.sort((a, b) => a - b);
+
+        // Compute the numeric “span” from min to max
+        const minRank = numericRanks[0];
+        const maxRank = numericRanks[numericRanks.length - 1];
+        const neededSpan = maxRank - minRank + 1;
+
+        // If neededSpan ≤ total group length, jokers can fill in any gaps
+        if (neededSpan <= cards.length) {
+          return true;
+        }
+        return false;
+      }
+
+      function validateGroups(playerIdx) {
+        const player = gameState.players[playerIdx];
+        player.groupValidities = player.groups.map(groupArr => validateGroup(groupArr));
+        updateUI();
+      }
+
+      // === Find Pure Sequence (Helper) ===
+
+      function findPureSequence(allCards) {
+        // Return array of card‐strings forming the longest pure sequence (no Jokers),
+        // or empty array if none.
+        let bestRun = [];
+        const suitOrder = ['♣', '♦', '♥', '♠'];
+
+        suitOrder.forEach(suit => {
+          // Collect all non-joker cards of this suit
+          const suitList = allCards
+            .filter(c => c !== 'JOK' && c.endsWith(suit))
+            .map(c => ({ card: c, num: rankMap[c.slice(0, -1)] }));
+          if (suitList.length < 3) return;
+
+          // Sort by numeric rank
+          suitList.sort((a, b) => a.num - b.num);
+          // Extract numeric array
+          const nums = suitList.map(o => o.num);
+
+          // Scan for longest run of consecutive numbers
+          let i = 0;
+          while (i < nums.length) {
+            let run = [suitList[i]];
+            let prev = nums[i];
+            let j = i + 1;
+            while (j < nums.length && nums[j] === prev + 1) {
+              run.push(suitList[j]);
+              prev = nums[j];
+              j++;
+            }
+            if (run.length >= 3 && run.length > bestRun.length) {
+              bestRun = run.map(o => o.card);
+            }
+            i++;
+          }
+        });
+        return bestRun;
+      }
+
+      // === Find Impure Sequence (Helper) ===
+
+      function findImpureSequence(allCards) {
+        // Return array of card‐strings forming the best impure sequence (can use Jokers),
+        // or empty array if none. We ignore Ace=14 logic here and treat Ace as 1.
+        const jokers = allCards.filter(c => c === 'JOK');
+        const jokerCount = jokers.length;
+        const nonJokers = allCards.filter(c => c !== 'JOK');
+        let bestRun = [];
+
+        const suitOrder = ['♣', '♦', '♥', '♠'];
+        suitOrder.forEach(suit => {
+          // Build a map of rank→cardString for this suit
+          const suitMap = {};
+          nonJokers.forEach(c => {
+            if (c.endsWith(suit)) {
+              const num = rankMap[c.slice(0, -1)];
+              suitMap[num] = c;
+            }
+          });
+          const ranks = Object.keys(suitMap).map(n => parseInt(n)).sort((a, b) => a - b);
+          if (ranks.length === 0) return;
+
+          // We will attempt window sizes from largest possible down to 3
+          // The maximum possible window is ranks.length + jokerCount (capped at 13)
+          const maxPossibleLen = Math.min(13, ranks.length + jokerCount);
+
+          for (let windowSize = maxPossibleLen; windowSize >= 3; windowSize--) {
+            // Try every possible start from 1..(14 - windowSize)
+            for (let start = 1; start <= 14 - windowSize; start++) {
+              const end = start + windowSize - 1;
+              // Count how many ranks between start..end are present
+              let presentCount = 0;
+              const presentCards = [];
+              for (let r = start; r <= end; r++) {
+                if (suitMap[r]) {
+                  presentCount++;
+                  presentCards.push(suitMap[r]);
+                }
+              }
+              const missing = windowSize - presentCount;
+              if (missing <= jokerCount) {
+                // We can form an impure sequence of length windowSize
+                // Build the run: include all presentCards plus `missing` Jokers
+                const runCards = presentCards.slice(); 
+                // Take `missing` jokers from `jokers`
+                for (let k = 0; k < missing; k++) {
+                  runCards.push('JOK');
+                }
+                if (runCards.length > bestRun.length) {
+                  bestRun = runCards;
+                }
+                // Once we find one for this windowSize, no need to try smaller windowSizes
+                return;
+              }
+            }
+          }
+        });
+
+        return bestRun;
+      }
+
+      // === Advanced Evaluate Logic ===
+
+      function evaluatePoints(playerIdx) {
+        const player = gameState.players[playerIdx];
+        // Combine all cards: both in hand and in groups
+        const allCards = player.hand.concat(...player.groups);
+
+        // 1) Find the longest pure sequence (no Jokers)
+        const pureRun = findPureSequence(allCards.slice());
+        if (pureRun.length < 3) {
+          // No valid pure rummy → all cards count
+          let total = allCards.reduce((sum, c) => sum + cardPointValue(c), 0);
+          if (total > 80) total = 80;
+          updateStatus(`${player.name} has no pure sequence. Total points = ${total} (capped at 80).`);
+          return;
+        }
+
+        // Remove pureRun cards from a copy of allCards
+        let remaining = allCards.slice();
+        pureRun.forEach(card => {
+     	    const idx = remaining.indexOf(card);
+     	    if (idx !== -1) remaining.splice(idx, 1);
+        });
+
+        // 2) Find an impure sequence (can use Jokers) among remaining
+        const impureRun = findImpureSequence(remaining.slice());
+        let leftover;
+        if (impureRun.length < 3) {
+          // No second impure rummy → everything not in pureRun counts
+          leftover = remaining.slice();
+        } else {
+          // Remove impureRun cards from remaining
+          leftover = remaining.slice();
+          impureRun.forEach(card => {
+            const idx = leftover.indexOf(card);
+            if (idx !== -1) leftover.splice(idx, 1);
+          });
+        }
+
+        // Sum points of leftover cards
+        let total = leftover.reduce((sum, c) => sum + cardPointValue(c), 0);
+        if (total > 80) total = 80;
+        updateStatus(`${player.name} has leftover cards worth ${total} points (capped at 80).`);
+      }
+
+      // === Show / Scoring Logic ===
+
+      function attemptShow(playerIdx) {
+        const player = gameState.players[playerIdx];
+        const handCount    = player.hand.length;                        
+        const groupedCount = player.groups.reduce((sum, grp) => sum + grp.length, 0);
+
+        // Valid if exactly 13 cards in groups and 1 in hand
+        if (groupedCount === 13 && handCount === 1) {
+          // Compute opponent’s points: sum of values of all cards in their hand
+          const oppIdx = 1 - playerIdx;
+          // For “Show”, we assume the opponent’s entire ungrouped hand counts (no evaluation logic here)
+          const oppHand = gameState.players[oppIdx].hand;
+          let points = oppHand.reduce((sum, c) => sum + cardPointValue(c), 0);
+          if (points > 80) points = 80;
+
+          updateStatus(
+            `${player.name} has declared! ${gameState.players[oppIdx].name} scores ${points} points (capped at 80).`
+          );
+          disableButtons();
+          return;
+        }
+
+        alert('Invalid declaration. You must have exactly 13 cards grouped and 1 card in hand.');
+      }
+
       // === Sort Logic ===
 
       function sortHand(playerIdx) {
@@ -965,7 +1099,7 @@
         }
       });
 
-      // Hand drop target: allow dragging a grouped card back to hand
+      // Hand drop target: allow dragging a grouped card back into hand
       [p1HandDiv, p2HandDiv].forEach((handDiv, idx) => {
         handDiv.addEventListener('dragover', ev => ev.preventDefault());
         handDiv.addEventListener('drop', ev => {
