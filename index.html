@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Rummy Playing Assistant (with Wild Card Rank)</title>
+  <title>Rummy Playing Assistant (Optimal Impure Sequence)</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -61,7 +61,7 @@
   </style>
 </head>
 <body>
-  <h1>Rummy Playing Assistant (with Wild Card)</h1>
+  <h1>Rummy Playing Assistant (Optimal Impure Sequence)</h1>
   <p>
     Enter the <strong>ranks</strong> you have for each suit (comma‐separated), choose your <strong>wild card rank</strong>, and specify how many pure Jokers (<strong>JOK</strong>) you have (0–2).  
     A “wild card rank” (e.g. 7) means that any 7 of any suit can act either as a normal “7” in a pure run of its suit, or as a wildcard in an impure sequence.  
@@ -130,25 +130,18 @@
     const rankMap = {
       'A': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6,
       '7': 7, '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13
-      // Note: Jokers (JOK) and wild-card ranks handled separately
     };
 
-    // Extract the rank portion from a card string (e.g. "10♠" → "10", "JOK" → null)
     function getRank(card) {
       if (card === 'JOK') return null;
       return card.slice(0, -1);
     }
-    // Extract suit from card (e.g. "10♠" → "♠")
     function getSuit(card) {
       if (card === 'JOK') return null;
       return card.slice(-1);
     }
 
-    // Count a single card’s points:
-    //   • A,10,J,Q,K = 10 points each  
-    //   • Numbered cards (2–9) = face value  
-    //   • Jokers (JOK) = 0 points  
-    //   • Wild-card‐rank cards: If not used in any sequence, count them as their face value (10 for A/10/J/Q/K; numeric otherwise)
+    // Count a single card’s points: A/10/J/Q/K = 10, numeric = face value, Joker = 0
     function cardPointValue(card) {
       if (card === 'JOK') return 0;
       const rank = getRank(card);
@@ -156,13 +149,8 @@
       return parseInt(rank, 10);
     }
 
-    // ---- Sequence-Finding Logic ----
+    // ---- Pure‐Sequence Logic ----
 
-    /**
-     * findPureSequence(allCards):
-     *   Finds the longest “pure” (no wilds/jokers) run of length ≥ 3 in any one suit.
-     *   Returns an array of card‐strings that make up that pure sequence. If none ≥ 3, returns [].
-     */
     function findPureSequence(allCards) {
       let bestRun = [];
       const suitOrder = ['♣','♦','♥','♠'];
@@ -176,11 +164,9 @@
 
         if (suitList.length < 3) return;
 
-        // Sort by numeric rank
         suitList.sort((a, b) => a.num - b.num);
         const nums = suitList.map(o => o.num);
 
-        // Scan for the longest run of consecutive numbers
         let i = 0;
         while (i < nums.length) {
           let run = [ suitList[i] ];
@@ -201,52 +187,47 @@
       return bestRun;
     }
 
-    /**
-     * findImpureSequence(allCards, designatedRank):
-     *   Finds the best impure sequence (length ≥ 3) in any suit, allowing:
-     *     • “Pure” Jokers ("JOK"), and
-     *     • Any card whose rank == designatedRank (i.e. wild‐card rank), 
-     *       which can be used AS a wildcard or AS its face value if it matches a suit/run.
-     *   Returns an array of card‐strings making up that sequence (present cards + used wildcards).
-     *   If none ≥ 3, returns [].
-     */
+    // ---- Impure‐Sequence Logic (Optimal) ----
+
     function findImpureSequence(allCards, designatedRank) {
-      // Count pure Jokers
+      // Count how many pure Jokers we have
       const pureJokers = allCards.filter(c => c === 'JOK').length;
-      // Collect all designated‐rank cards (regardless of suit)
-      const designatedCards = allCards.filter(c => 
-        typeof c === 'string' && getRank(c) === designatedRank
-      );
+      // Collect all designated‐rank cards
+      const designatedCards = allCards.filter(c => typeof c === 'string' && getRank(c) === designatedRank);
       const wildcardCount = pureJokers + designatedCards.length;
 
-      // Non-joker, non-designated cards:
-      const nonWildCards = allCards.filter(c => 
-        c !== 'JOK' && getRank(c) !== designatedRank
-      );
+      // Build list of non-wild/non-JOK cards
+      const nonWildCards = allCards.filter(c => c !== 'JOK' && getRank(c) !== designatedRank);
 
-      let bestRun = [];
+      let bestChoice = {
+        run: [],
+        leftoverPoints: Infinity,
+        runLength: 0
+      };
+
       const suitOrder = ['♣','♦','♥','♠'];
-
       suitOrder.forEach(suit => {
-        // Build a map: rank → cardString for all cards of this suit that are NOT designated‐rank
+        // Build a map: rank (number) → cardString, for this suit excluding designated/wild cards
         const suitMap = {};
         nonWildCards.forEach(c => {
           if (typeof c === 'string' && getSuit(c) === suit) {
             const num = rankMap[getRank(c)];
-            if (num !== undefined) suitMap[num] = c;
+            if (num !== undefined) {
+              suitMap[num] = c;
+            }
           }
         });
-        const ranks = Object.keys(suitMap).map(n => parseInt(n)).sort((a,b) => a - b);
-        if (ranks.length === 0 && wildcardCount < 3) return;
+        const ranks = Object.keys(suitMap).map(n => parseInt(n)).sort((a, b) => a - b);
 
-        // Maximum possible length of a sequence in this suit = ranks.length + wildcardCount
-        // Try window sizes from that maximum down to 3:
+        // We can attempt sequences of size up to ranks.length + wildcardCount
         const maxPossibleLen = ranks.length + wildcardCount;
+        // For each window size (descending)
         for (let windowSize = maxPossibleLen; windowSize >= 3; windowSize--) {
+          // For each possible start rank
           for (let start = 1; start <= 14 - windowSize; start++) {
             const end = start + windowSize - 1;
+            let presentCards = [];
             let presentCount = 0;
-            const presentCards = [];
 
             for (let r = start; r <= end; r++) {
               if (suitMap[r]) {
@@ -254,49 +235,64 @@
                 presentCards.push(suitMap[r]);
               }
             }
-
-            // Number of missing cards = windowSize - presentCount
             const missing = windowSize - presentCount;
             if (missing <= wildcardCount) {
-              // We can fill those gaps with Jokers or designated cards acting as wildcard
+              // We can form a run of length windowSize
+              // Construct the candidate run: presentCards + missing wildcards
+              // Use pure Jokers first, then designated cards
+              let usedJokers = 0, usedDesignated = 0;
               const runCards = presentCards.slice();
-              // Pull missing wildcards from either pureJokers first or designatedCards
-              let toUse = missing;
-              // Use pure Jokers (string "JOK") first
-              for (let k = 0; k < pureJokers && toUse > 0; k++) {
-                runCards.push('JOK');
-                toUse--;
+
+              for (let k = 0; k < missing; k++) {
+                if (usedJokers < pureJokers) {
+                  runCards.push('JOK');
+                  usedJokers++;
+                } else {
+                  runCards.push(designatedCards[usedDesignated]);
+                  usedDesignated++;
+                }
               }
-              // Then use designated cards
-              for (let k = 0; k < designatedCards.length && toUse > 0; k++) {
-                runCards.push(designatedCards[k]);
-                toUse--;
+
+              // Now compute leftover points: everything outside this run + outside pure run (pure run handled by caller)
+              const tempAll = allCards.slice();
+              runCards.forEach(card => {
+                const idx = tempAll.indexOf(card);
+                if (idx !== -1) tempAll.splice(idx, 1);
+              });
+
+              // Compute total points of leftover:
+              const leftoverPoints = tempAll.reduce((sum, c) => sum + cardPointValue(c), 0);
+              // If lower than bestChoice, or tie but this run is longer, take it
+              if (
+                leftoverPoints < bestChoice.leftoverPoints
+                || (leftoverPoints === bestChoice.leftoverPoints && runCards.length > bestChoice.runLength)
+              ) {
+                bestChoice = {
+                  run: runCards,
+                  leftoverPoints: leftoverPoints,
+                  runLength: runCards.length
+                };
               }
-              if (runCards.length > bestRun.length) {
-                bestRun = runCards;
-              }
-              // Once found a run for this windowSize, no need to try smaller windows
-              return;
             }
           }
         }
       });
 
-      return bestRun;
+      // If bestChoice.run still empty or length < 3, return []
+      if (bestChoice.run.length < 3) {
+        return [];
+      }
+      return bestChoice.run;
     }
 
-    /**
-     * evaluateHand(allCards, designatedRank):
-     *   1) Find best pure sequence (no wild/ jokers).
-     *   2) Remove those cards, then find best impure sequence (using wildcards).
-     *   3) Leftover cards = everything not in either sequence.
-     *   4) Sum points of leftover (A/10/J/Q/K=10; numeric=face; JOK=0). Cap at 80.
-     */
+    // ---- Combined Evaluation Logic ----
+
     function evaluateHand(allCards, designatedRank) {
-      // 1) Pure sequence
+      // 1) Find best pure sequence
       const pureRun = findPureSequence(allCards);
+
+      // If no pure sequence found:
       if (pureRun.length < 3) {
-        // No pure sequence → all cards count
         let total = allCards.reduce((sum, c) => sum + cardPointValue(c), 0);
         if (total > 80) total = 80;
         return {
@@ -307,29 +303,28 @@
         };
       }
 
-      // Remove pureRun from a copy of allCards
-      let remaining = allCards.slice();
+      // 2) Remove pureRun from a working copy
+      let tempCards = allCards.slice();
       pureRun.forEach(card => {
-        const idx = remaining.indexOf(card);
-        if (idx !== -1) remaining.splice(idx, 1);
+        const idx = tempCards.indexOf(card);
+        if (idx !== -1) tempCards.splice(idx, 1);
       });
 
-      // 2) Impure sequence
-      const impureRun = findImpureSequence(remaining.slice(), designatedRank);
+      // 3) Find best impure sequence among tempCards
+      const impureRun = findImpureSequence(tempCards, designatedRank);
+
       let leftover;
       if (impureRun.length < 3) {
-        // No impure sequence → everything not in pureRun counts
-        leftover = remaining.slice();
+        leftover = tempCards.slice();
       } else {
-        // Remove impureRun from remaining
-        leftover = remaining.slice();
+        leftover = tempCards.slice();
         impureRun.forEach(card => {
           const idx = leftover.indexOf(card);
           if (idx !== -1) leftover.splice(idx, 1);
         });
       }
 
-      // 3) Sum points of leftover
+      // 4) Compute leftover points, capped at 80
       let total = leftover.reduce((sum, c) => sum + cardPointValue(c), 0);
       if (total > 80) total = 80;
 
@@ -340,7 +335,6 @@
         points: total
       };
     }
-
 
     // ---- DOM & Event Handlers ----
 
@@ -355,7 +349,7 @@
     const resultDiv      = document.getElementById('result');
 
     evaluateBtn.addEventListener('click', () => {
-      resultDiv.innerHTML = '';  // Clear previous results
+      resultDiv.innerHTML = ''; // Clear previous
 
       // Helper: parse one suit’s text into array of "<rank><suit>" strings
       function parseSuit(text, suitSymbol) {
@@ -372,8 +366,8 @@
       const diamondsRaw = diamondsInput.value;
       const heartsRaw   = heartsInput.value;
       const spadesRaw   = spadesInput.value;
-      const wildRank    = wildRankSelect.value;       // e.g. "8" or "" for none
-      const jokersRaw   = jokersInput.value.trim();    // e.g. "1" or "0"
+      const wildRank    = wildRankSelect.value; // e.g. "8" or "" for none
+      const jokersRaw   = jokersInput.value.trim();
 
       // 2) Validate number of Jokers
       const jokersCount = parseInt(jokersRaw, 10);
@@ -382,7 +376,7 @@
         return;
       }
 
-      // 3) Build full card array
+      // 3) Build full array of card strings
       let cards = [];
       cards = cards.concat(
         parseSuit(clubsRaw, '♣'),
@@ -390,7 +384,6 @@
         parseSuit(heartsRaw, '♥'),
         parseSuit(spadesRaw, '♠')
       );
-      // Add that many "JOK" cards
       for (let i = 0; i < jokersCount; i++) {
         cards.push('JOK');
       }
@@ -408,7 +401,7 @@
         }
       });
       if (invalids.length) {
-        resultDiv.innerHTML = 
+        resultDiv.innerHTML =
           '<span class="error">Invalid card(s): ' +
           invalids.join(', ') +
           '.<br>Use ranks A,2–10,J,Q,K per suit input, and specify Jokers separately.</span>';
