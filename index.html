@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Two-Player Rummy with Advanced Evaluation</title>
+  <title>Two-Player Rummy with Advanced Evaluation (Fixed Evaluate)</title>
   <style>
     /* ------------------------ */
     /* Global / Layout Styling  */
@@ -142,7 +142,7 @@
   </style>
 </head>
 <body>
-  <h1>Two-Player Rummy with Advanced Evaluation</h1>
+  <h1>Two-Player Rummy with Advanced Evaluation (Fixed Evaluate)</h1>
   <p>
     After the initial deal, any valid <strong>pure sets</strong> or <strong>pure sequences</strong> 
     are auto‐grouped. Jokers (“JOK”) act as wildcards only in the second sequence or impure sequences.  
@@ -151,6 +151,7 @@
       <li>Caps the total points at <strong>80</strong>.</li>
       <li>Punishes any cards not in a <strong>first pure sequence</strong> of length ≥ 3 by counting them.</li>
       <li>Also requires a <strong>second sequence (impure, can use Jokers)</strong> of length ≥ 3; any cards not in either sequence count.</li>
+      <li>If a player has already <em>Shown</em> (game over), evaluating the <em>winner</em> just counts whatever is in their hand (typically the single leftover).</li>
     </ol>
   </p>
   <div id="status">Initialising game…</div>
@@ -229,7 +230,7 @@
   <script>
     // ================================
     //      Two-Player Rummy JS
-    //      (with Advanced Evaluation)
+    //      (with Fixed Evaluate)
     // ================================
     document.addEventListener('DOMContentLoaded', () => {
       // === Utility Functions ===
@@ -275,7 +276,9 @@
           { hand: [], name: 'Player 2', groups: [], groupValidities: [], sorted: false }
         ],
         currentPlayerIndex: 0,
-        hasDrawn: false
+        hasDrawn: false,
+        gameOver: false,      // flag to track if someone has shown
+        winnerIdx: null       // index of the winner once show occurs
       };
 
       // === DOM References ===
@@ -315,6 +318,8 @@
         gameState.discardPile = [];
         gameState.currentPlayerIndex = 0;
         gameState.hasDrawn = false;
+        gameState.gameOver = false;
+        gameState.winnerIdx = null;
 
         // Reset each player's hand, groups, validities, and sorted flag
         gameState.players.forEach(player => {
@@ -622,7 +627,7 @@
       // === Gameplay Logic ===
 
       function drawFromDeck() {
-        if (!gameState.hasDrawn) {
+        if (!gameState.hasDrawn && !gameState.gameOver) {
           if (gameState.deck.length === 0) {
             if (gameState.discardPile.length <= 1) {
               alert('No cards left to draw.');
@@ -645,7 +650,7 @@
       }
 
       function drawFromDiscard() {
-        if (!gameState.hasDrawn) {
+        if (!gameState.hasDrawn && !gameState.gameOver) {
           if (!gameState.discardPile.length) {
             alert('Discard pile is empty.');
             return;
@@ -662,6 +667,7 @@
       }
 
       function createNewGroup(playerIdx) {
+        if (gameState.gameOver) return;
         // Add an empty array for that player's new group
         gameState.players[playerIdx].groups.push([]);
         // Reset validity marker
@@ -670,6 +676,8 @@
       }
 
       function handleDrop(ev, targetPlayerIdx, targetGroupIdx) {
+        ev.preventDefault();
+        if (gameState.gameOver) return;
         const data = ev.dataTransfer.getData('text/plain');
         if (!data) return;
 
@@ -705,6 +713,7 @@
       }
 
       function discardCard(playerIdx, cardIdx) {
+        if (gameState.gameOver) return;
         if (gameState.currentPlayerIndex !== playerIdx || !gameState.hasDrawn) return;
         const card = gameState.players[playerIdx].hand.splice(cardIdx, 1)[0];
         gameState.discardPile.push(card);
@@ -898,7 +907,7 @@
           // Scan for longest run of consecutive numbers
           let i = 0;
           while (i < nums.length) {
-            let run = [suitList[i]];
+            let run = [ suitList[i] ];
             let prev = nums[i];
             let j = i + 1;
             while (j < nums.length && nums[j] === prev + 1) {
@@ -919,7 +928,7 @@
 
       function findImpureSequence(allCards) {
         // Return array of card‐strings forming the best impure sequence (can use Jokers),
-        // or empty array if none. We ignore Ace=14 logic here and treat Ace as 1.
+        // or empty array if none. Treat Ace as 1 in this logic.
         const jokers = allCards.filter(c => c === 'JOK');
         const jokerCount = jokers.length;
         const nonJokers = allCards.filter(c => c !== 'JOK');
@@ -939,8 +948,8 @@
           if (ranks.length === 0) return;
 
           // We will attempt window sizes from largest possible down to 3
-          // The maximum possible window is ranks.length + jokerCount (capped at 13)
-          const maxPossibleLen = Math.min(13, ranks.length + jokerCount);
+          // The maximum possible window is ranks.length + jokerCount
+          const maxPossibleLen = ranks.length + jokerCount;
 
           for (let windowSize = maxPossibleLen; windowSize >= 3; windowSize--) {
             // Try every possible start from 1..(14 - windowSize)
@@ -959,7 +968,7 @@
               if (missing <= jokerCount) {
                 // We can form an impure sequence of length windowSize
                 // Build the run: include all presentCards plus `missing` Jokers
-                const runCards = presentCards.slice(); 
+                const runCards = presentCards.slice();
                 // Take `missing` jokers from `jokers`
                 for (let k = 0; k < missing; k++) {
                   runCards.push('JOK');
@@ -977,14 +986,23 @@
         return bestRun;
       }
 
-      // === Advanced Evaluate Logic ===
+      // === Advanced Evaluate Logic (Fixed) ===
 
       function evaluatePoints(playerIdx) {
         const player = gameState.players[playerIdx];
-        // Combine all cards: both in hand and in groups
+
+        // If game is over and this player is the winner, count only their hand
+        if (gameState.gameOver && gameState.winnerIdx === playerIdx) {
+          let total = player.hand.reduce((sum, c) => sum + cardPointValue(c), 0);
+          if (total > 80) total = 80;
+          updateStatus(`${player.name} has already shown. Leftover hand = ${total} points (capped at 80).`);
+          return;
+        }
+
+        // Otherwise, use the two-sequence logic on all cards (hand + groups)
         const allCards = player.hand.concat(...player.groups);
 
-        // 1) Find the longest pure sequence (no Jokers)
+        // 1) Find the best pure sequence (no Jokers)
         const pureRun = findPureSequence(allCards.slice());
         if (pureRun.length < 3) {
           // No valid pure rummy → all cards count
@@ -997,11 +1015,11 @@
         // Remove pureRun cards from a copy of allCards
         let remaining = allCards.slice();
         pureRun.forEach(card => {
-     	    const idx = remaining.indexOf(card);
-     	    if (idx !== -1) remaining.splice(idx, 1);
+          const idx = remaining.indexOf(card);
+          if (idx !== -1) remaining.splice(idx, 1);
         });
 
-        // 2) Find an impure sequence (can use Jokers) among remaining
+        // 2) Find the best impure sequence (Jokers allowed)
         const impureRun = findImpureSequence(remaining.slice());
         let leftover;
         if (impureRun.length < 3) {
@@ -1031,9 +1049,12 @@
 
         // Valid if exactly 13 cards in groups and 1 in hand
         if (groupedCount === 13 && handCount === 1) {
+          // Mark game over
+          gameState.gameOver = true;
+          gameState.winnerIdx = playerIdx;
+
           // Compute opponent’s points: sum of values of all cards in their hand
           const oppIdx = 1 - playerIdx;
-          // For “Show”, we assume the opponent’s entire ungrouped hand counts (no evaluation logic here)
           const oppHand = gameState.players[oppIdx].hand;
           let points = oppHand.reduce((sum, c) => sum + cardPointValue(c), 0);
           if (points > 80) points = 80;
@@ -1051,6 +1072,7 @@
       // === Sort Logic ===
 
       function sortHand(playerIdx) {
+        if (gameState.gameOver) return;
         gameState.players[playerIdx].sorted = true;
         updateUI();
       }
@@ -1091,7 +1113,7 @@
         if (!data) return;
         const parts = data.split(',');
         const sourcePlayerIdx = parseInt(parts[0], 10);
-        if (parts.length === 2 && !parts[1].startsWith('g')) {
+        if (parts.length === 2 && !parts[1].startsWith('g') && !gameState.gameOver) {
           const cardIdx = parseInt(parts[1], 10);
           if (sourcePlayerIdx === gameState.currentPlayerIndex) {
             discardCard(sourcePlayerIdx, cardIdx);
@@ -1099,11 +1121,12 @@
         }
       });
 
-      // Hand drop target: allow dragging a grouped card back into hand
+      // Hand drop target: allow dragging a grouped card back to hand
       [p1HandDiv, p2HandDiv].forEach((handDiv, idx) => {
         handDiv.addEventListener('dragover', ev => ev.preventDefault());
         handDiv.addEventListener('drop', ev => {
           ev.preventDefault();
+          if (gameState.gameOver) return;
           const data = ev.dataTransfer.getData('text/plain');
           if (!data) return;
           const parts = data.split(',');
