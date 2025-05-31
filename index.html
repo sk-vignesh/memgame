@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Rummy Assistant (Require 13 Cards, “T” for 10)</title>
+  <title>Rummy Assistant (Fix Pure Sequence Detection)</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -66,16 +66,15 @@
   </style>
 </head>
 <body>
-  <h1>Rummy Assistant (13 Cards Required, “T” = 10)</h1>
+  <h1>Rummy Assistant (Fix Pure Sequence Detection)</h1>
   <p>
-    Enter exactly 13 cards total (across all suits plus Jokers).  
-    For each suit (♣, ♦, ♥, ♠), enter your ranks as a <strong>continuous string of characters</strong>—no commas or spaces—using:
+    Enter exactly 13 cards total. For each suit (♣, ♦, ♥, ♠), use a continuous string of rank‐characters (no commas/spaces), where:
     <br>  
-    `A 2 3 4 5 6 7 8 9 T J Q K`  
-    (where **T** = “10”).  
-    Then select your Wild‐card rank (if any), and specify how many pure Jokers (JOK) you have (0–2).  
+    <strong>`A 2 3 4 5 6 7 8 9 T J Q K`</strong>  
+    (here **T** = “10”).  
+    Then pick your Wild‐card rank (or leave blank), and specify how many Jokers (JOK) (0–2).  
     <br><br>
-    <strong>Important rule:</strong> To avoid “losing,” the final grouping must contain at least one pure sequence and at least one impure sequence. Otherwise, no grouping counts and all non‐Joker, non‐wild cards are counted toward points.
+    <strong>Rule:</strong> Your final grouping must include at least one pure sequence and at least one impure sequence. Otherwise, no grouping counts—every non‐JOK, non‐wild card is penalized.
   </p>
 
   <div class="input-group">
@@ -126,33 +125,29 @@
   <div id="result"></div>
 
   <script>
-    // ---------------------------------------
+    // ---------------------------
     // UTILITY & EVALUATION LOGIC
-    // ---------------------------------------
+    // ---------------------------
     const rankMap = {
       'A': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6,
       '7': 7, '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13
     };
 
-    // Map a single-character input rank to its numeric string:
-    //  'T' → '10'; 'A','2'…'9','J','Q','K' remain themselves.
+    // Convert input‐character to rank string
     function normalizeRankChar(ch) {
       if (ch === 'T') return '10';
-      return ch; 
+      return ch;
     }
 
-    // Extract rank portion (e.g. "10♠" → "10", "JOK" → null)
     function getRank(card) {
       if (card === 'JOK') return null;
       return card.slice(0, -1);
     }
-    // Extract suit portion (e.g. "10♠" → "♠")
     function getSuit(card) {
       if (card === 'JOK') return null;
       return card.slice(-1);
     }
 
-    // Card-point value (wild-rank leftover = 0; JOK = 0; A/10/J/Q/K=10; 2–9=face value)
     function cardPointValue(card, designatedWild) {
       if (card === 'JOK') return 0;
       const r = getRank(card);
@@ -161,10 +156,10 @@
       return parseInt(r, 10);
     }
 
-    // 1) Find all pure sequences (length ≥ 3) for a given suit,
-    //    excluding wild unless no normal-only run ≥3 exists.
+    // 1) Find pure sequences for a given suit, EXCLUDING wild if a normal‐only run ≥ 3 exists;
+    //    otherwise include wild to form any run ≥ 3.
     function findPureSequencesForSuit(cards, suit, designatedWild) {
-      // (A) Build list of “normal” cards: match suit, not 'JOK', rank ≠ designatedWild
+      // (A) Normal cards: match suit, not JOK, rank ≠ designatedWild
       const normalList = cards
         .filter(c => c !== 'JOK' && getSuit(c) === suit && getRank(c) !== designatedWild)
         .map(c => ({ card: c, num: rankMap[getRank(c)] }))
@@ -175,7 +170,7 @@
       const nums = normalList.map(o => o.num);
       let i = 0;
       while (i < nums.length) {
-        let run = [ normalList[i] ];
+        let run = [normalList[i]];
         let prev = nums[i];
         let j = i + 1;
         while (j < nums.length && nums[j] === prev + 1) {
@@ -191,7 +186,7 @@
         }
       }
 
-      // (B) If no normal-only run ≥3, allow any card (including wild) in that suit
+      // (B) If no normal‐only run ≥ 3, include wild‐rank cards to form any run ≥ 3
       if (sequences.length === 0) {
         const allList = cards
           .filter(c => c !== 'JOK' && getSuit(c) === suit)
@@ -202,7 +197,7 @@
         const allNums = allList.map(o => o.num);
         let x = 0;
         while (x < allNums.length) {
-          let run = [ allList[x] ];
+          let run = [allList[x]];
           let prev = allNums[x];
           let y = x + 1;
           while (y < allNums.length && allNums[y] === prev + 1) {
@@ -219,7 +214,7 @@
         }
       }
 
-      return sequences; // array of card‐string arrays
+      return sequences; // array of arrays of card‐strings
     }
 
     function findAllPureSequences(cards, designatedWild) {
@@ -231,7 +226,7 @@
       return out;
     }
 
-    // 2) Find all pure sets (three or more cards of same rank)
+    // 2) Find all pure sets (3+ cards of same rank)
     function findAllPureSets(cards) {
       const buckets = {};
       cards.forEach(c => {
@@ -249,7 +244,7 @@
       return sets;
     }
 
-    // 3) Find optimal impure sequence (length ≥3) to minimize leftover
+    // 3) Find optimal impure sequence (3+) to minimize leftover
     function findImpureSequence(cards, designatedWild) {
       const pureJokers = cards.filter(c => c === 'JOK').length;
       const designatedCards = cards.filter(c => c !== 'JOK' && getRank(c) === designatedWild);
@@ -320,8 +315,8 @@
       return best.run.length >= 3 ? best.run : [];
     }
 
-    // 4) Recursive search for pure groups (must pick a pure sequence if possible),
-    //    then impure. We track “rootHasPure” and “hasPickedPure.”
+    // 4) Recursive search over pure groups (must pick pure-sequence if possible),
+    //    then impure. Track “rootHasPure” and “hasPickedPure.”
     function arrayMinus(src, rem) {
       const out = src.slice();
       rem.forEach(el => {
@@ -335,7 +330,7 @@
       const allPureSeqs = findAllPureSequences(working, designatedWild);
       const allPureSets = findAllPureSets(working);
 
-      // If no pure sequences or sets at all, go to impure
+      // If no pure seqs/sets, jump to impure
       if (allPureSeqs.length === 0 && allPureSets.length === 0) {
         const impRes = extractImpure(working, designatedWild);
         return {
@@ -348,7 +343,7 @@
 
       let bestOutcome = null;
 
-      // (A) Pick each pure sequence
+      // (A) Try each pure sequence
       for (const seq of allPureSeqs) {
         const rem = arrayMinus(working, seq);
         const sub = searchPureGroups(rem, designatedWild, rootHasPure, true);
@@ -364,7 +359,7 @@
         }
       }
 
-      // (B) Pick each pure set (does not count as picking a pure sequence)
+      // (B) Try each pure set (does NOT count as picking a pure sequence)
       for (const setGrp of allPureSets) {
         const rem = arrayMinus(working, setGrp);
         const sub = searchPureGroups(rem, designatedWild, rootHasPure, hasPickedPure);
@@ -380,9 +375,7 @@
         }
       }
 
-      // (C) Skip pure-groups and go to impure—but only if:
-      //     * No pure sequence was possible at root (rootHasPure === false), or
-      //     * We have already picked a pure sequence (hasPickedPure === true).
+      // (C) Skip pure groups → impure, but only if no pure seq at root or we already picked one
       if (!rootHasPure || hasPickedPure) {
         const impRes = extractImpure(working, designatedWild);
         const candidate = {
@@ -399,7 +392,7 @@
       return bestOutcome;
     }
 
-    // 5) Extract impure sequences from working, then compute leftover+points
+    // 5) Extract impure sequences, then compute leftover+points
     function extractImpure(working, designatedWild) {
       let temp = working.slice();
       const impureSeqs = [];
@@ -409,7 +402,7 @@
         impureSeqs.push(nextImp);
         temp = arrayMinus(temp, nextImp);
       }
-      // Filter leftover: exclude wild-rank cards (count as grouped, 0)
+      // Filter leftover: remove wild-rank cards (0 point)
       const leftover = temp.filter(c => getRank(c) !== designatedWild);
 
       let pts = leftover.reduce((sum, c) => sum + cardPointValue(c, designatedWild), 0);
@@ -417,25 +410,23 @@
       return { impureSeqs, leftover, points: pts };
     }
 
-    // 6) Main evaluate: determine if a pure sequence was possible at root, then recurse
+    // 6) Main evaluate: check if pure sequences possible at root, then recurse
     function evaluateHand(cards, designatedWild) {
       const rootPureList = findAllPureSequences(cards, designatedWild);
       const rootHasPure = (rootPureList.length > 0);
       return searchPureGroups(cards, designatedWild, rootHasPure, false);
     }
 
-    // 7) Override if missing either pure sequence or impure sequence
+    // 7) Override if missing pure seq or impure seq
     function finalResult(cards, designatedWild) {
       const res = evaluateHand(cards, designatedWild);
       if (res.pureSeqs.length < 1 || res.impureSeqs.length < 1) {
-        // No valid “win” grouping → count everything except JOK & wild
+        // No valid grouping → count all non-JOK, non-wild
         const leftoverAll = cards.filter(c => c !== 'JOK' && getRank(c) !== designatedWild);
         let pts = leftoverAll.reduce((sum, c) => sum + cardPointValue(c, designatedWild), 0);
         if (pts > 80) pts = 80;
         return {
-          pureSeqs: [],
-          pureSets: [],
-          impureSeqs: [],
+          pureSeqs: [], pureSets: [], impureSeqs: [],
           leftover: leftoverAll,
           points: pts
         };
@@ -459,13 +450,11 @@
     evaluateBtn.addEventListener('click', () => {
       resultDiv.innerHTML = '';
 
-      // Helper: parse each suit‐input string (no separators) into individual rank‐suit cards
       function parseSuit(inputText, suitSymbol) {
-        const ranks = inputText.trim().toUpperCase().split('');
+        const chars = inputText.trim().toUpperCase().split('');
         const cards = [];
-        ranks.forEach(ch => {
+        chars.forEach(ch => {
           const norm = normalizeRankChar(ch);
-          // Validate
           const validRanks = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
           if (validRanks.includes(norm)) {
             cards.push(norm + suitSymbol);
@@ -479,7 +468,7 @@
       const diamondsRaw = diamondsInput.value;
       const heartsRaw   = heartsInput.value;
       const spadesRaw   = spadesInput.value;
-      const wildRank    = wildRankSelect.value;   // "" or e.g. "7","10"
+      const wildRank    = wildRankSelect.value;   // "" or "7","10", etc
       const jokersRaw   = jokersInput.value.trim();
 
       // 2) Validate Jokers count
@@ -501,14 +490,14 @@
         cards.push('JOK');
       }
 
-      // 4) Check total count = 13
+      // 4) Enforce exactly 13 cards
       if (cards.length !== 13) {
         resultDiv.innerHTML = '<span class="error">Error: You must enter exactly 13 cards total (suits + Jokers). Currently you have ' 
                               + cards.length + '.</span>';
         return;
       }
 
-      // 5) Validate each card format
+      // 5) Validate each card
       const invalids = [];
       cards.forEach(c => {
         if (c === 'JOK') return;
@@ -523,11 +512,11 @@
       if (invalids.length) {
         resultDiv.innerHTML =
           '<span class="error">Invalid card(s): ' + invalids.join(', ') +
-          '.<br>Use ranks A,2–9,T,J,Q,K (input “T” for 10) plus suits ♣,♦,♥,♠.</span>';
+          '.<br>Use ranks A,2–9,T,J,Q,K plus suits ♣,♦,♥,♠.</span>';
         return;
       }
 
-      // 6) Determine designatedWild (if any)
+      // 6) Determine designatedWild (or null)
       const designatedWild = wildRank || null;
 
       // 7) Compute final result
