@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Rummy Assistant (Exclude Wild‐Rank from Leftovers)</title>
+  <title>Rummy Assistant (Pure Sets + Sequences + Optimal Impure)</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -59,9 +59,6 @@
     .error {
       color: red;
     }
-    ul {
-      margin: 0 0 10px 20px;
-    }
     .section-title {
       font-weight: bold;
       margin-top: 10px;
@@ -69,16 +66,16 @@
   </style>
 </head>
 <body>
-  <h1>Rummy Assistant (Exclude Wild‐Rank from Leftovers)</h1>
+  <h1>Rummy Assistant (Sets + Sequences + Optimal Impure)</h1>
   <p>
-    Enter your cards by suit, choose the <strong>wild card rank</strong>, and specify how many pure Jokers (<strong>JOK</strong>) you possess (0–2).  
-    Any card whose rank matches the chosen wild‐rank will be treated as “grouped” (and thus never count as leftover), and pure Jokers always count as zero.  
-    The program will:
+    Enter your cards by suit, choose the <strong>wild card rank</strong>, and specify how many pure Jokers (<strong>JOK</strong>) you have (0–2).  
+    The assistant will:
     <ol>
       <li>List <strong>all pure sequences</strong> (length ≥ 3) and remove them.</li>
-      <li>Then repeatedly find the <strong>optimal impure sequence</strong> (length ≥ 3) that minimizes leftover‐point total, removing each.</li>
-      <li>Any remaining cards whose rank ≠ wild‐rank will be shown as “leftover” (and counted); wild‐rank cards that were never used in a sequence are automatically removed from leftovers (0 points).</li>
-      <li>Points for leftover: A/10/J/Q/K=10, 2–9=face value, capped at 80.</li>
+      <li>List <strong>all pure sets</strong> (three or more of the same rank) and remove them.</li>
+      <li>Then repeatedly find the <strong>optimal impure sequence</strong> (length ≥ 3) that minimizes leftover‐points, removing each.</li>
+      <li>Any remaining cards whose rank ≠ wild‐rank will be shown as “leftover” (and counted). Any wild‐rank or JOK leftover count as 0 points and are not shown.</li>
+      <li>Points for leftover: A/10/J/Q/K = 10, 2–9 = face value, capped at 80.</li>
     </ol>
   </p>
 
@@ -131,7 +128,7 @@
 
   <script>
     // ---------------------------------------------------
-    // Utility Functions & Sequence‐Finding / Evaluation
+    // Utility Functions & Sequence/Set‐Finding / Evaluation
     // ---------------------------------------------------
 
     // Map face‐card ranks to numeric values
@@ -165,7 +162,7 @@
     }
 
     // ------- Find ALL Pure Sequences (length ≥ 3) -------
-    // Returns an array of arrays, e.g. [ ['2♣','3♣','4♣'], ['7♥','8♥','9♥'], … ]
+    // Returns an array of arrays, e.g. [ ['2♣','3♣','4♣'], … ]
     function findAllPureSequences(cards) {
       const sequences = [];
       const suitOrder = ['♣','♦','♥','♠'];
@@ -201,6 +198,28 @@
       });
 
       return sequences;
+    }
+
+    // ------- Find ALL Pure Sets (length ≥ 3) -------
+    // Returns an array of arrays, e.g. [ ['J♣','J♦','J♠'], … ]
+    function findAllPureSets(cards, designatedWild) {
+      const sets = [];
+      // Build a map: rank → [cards of that rank]
+      const rankBuckets = {};
+      cards.forEach(card => {
+        const r = getRank(card);
+        if (!r) return; // skip JOK
+        if (!rankBuckets[r]) rankBuckets[r] = [];
+        rankBuckets[r].push(card);
+      });
+      // For each rank, if bucket length ≥ 3, that's a pure set
+      Object.keys(rankBuckets).forEach(r => {
+        const bucket = rankBuckets[r];
+        if (bucket.length >= 3) {
+          sets.push(bucket.slice()); // all cards of that rank
+        }
+      });
+      return sets;
     }
 
     // ------- Find Optimal Impure Sequence (length ≥ 3) -------
@@ -246,7 +265,7 @@
             }
             const missing = windowSize - presentCount;
             if (missing <= wildcardCount) {
-              // We can form an impure run
+              // We can form this run
               let usedJ = 0, usedD = 0;
               const runCards = presentCards.slice();
               for (let k = 0; k < missing; k++) {
@@ -288,7 +307,7 @@
       return best.run;
     }
 
-    // ------- Full Evaluation: All Pure + All Impure Sequences -------
+    // ------- Full Evaluation: All Pure Sequences + Pure Sets + All Impure Sequences -------
     function evaluateHand(cards, designatedRank) {
       // 1) Find all pure sequences
       const pureSequences = findAllPureSequences(cards);
@@ -302,7 +321,17 @@
         });
       });
 
-      // 3) Repeatedly find the optimal impure sequence (length ≥ 3)
+      // 3) Find all pure sets among remaining
+      const pureSets = findAllPureSets(working, designatedRank);
+      // Remove those set cards from working
+      pureSets.forEach(setGroup => {
+        setGroup.forEach(card => {
+          const idx = working.indexOf(card);
+          if (idx !== -1) working.splice(idx, 1);
+        });
+      });
+
+      // 4) Repeatedly find optimal impure sequences
       const impureSequences = [];
       while (true) {
         const nextImpure = findImpureSequence(working, designatedRank);
@@ -314,16 +343,16 @@
         });
       }
 
-      // 4) Now 'working' holds leftover cards; but remove any designated‐rank cards
-      const leftoverRaw = working.slice();
-      const leftover = leftoverRaw.filter(c => getRank(c) !== designatedRank);
+      // 5) Now 'working' holds leftover cards. Remove any designated‐rank ones (0‐point)
+      const leftover = working.filter(c => getRank(c) !== designatedRank);
 
-      // 5) Compute points for leftover only
+      // 6) Compute leftover points (cap at 80)
       let pts = leftover.reduce((sum, c) => sum + cardPointValue(c, designatedRank), 0);
       if (pts > 80) pts = 80;
 
       return {
         pureSequences: pureSequences,
+        pureSets: pureSets,
         impureSequences: impureSequences,
         leftover: leftover,
         points: pts
@@ -346,7 +375,7 @@
     const resultDiv      = document.getElementById('result');
 
     evaluateBtn.addEventListener('click', () => {
-      resultDiv.innerHTML = ''; // Clear previous
+      resultDiv.innerHTML = ''; // clear previous
 
       // Helper: parse one suit’s text into ["<rank><suit>"]
       function parseSuit(text, suitSymbol) {
@@ -413,6 +442,7 @@
 
       // 7) Build output
       let out = '';
+
       // Pure sequences:
       out += '<div class="section-title">All Pure Sequences (length ≥ 3):</div>';
       if (evalResult.pureSequences.length === 0) {
@@ -420,6 +450,16 @@
       } else {
         evalResult.pureSequences.forEach(seq => {
           out += '  • ' + seq.join(', ') + '\n';
+        });
+      }
+
+      // Pure sets:
+      out += '\n<div class="section-title">All Pure Sets (length ≥ 3, same rank):</div>';
+      if (evalResult.pureSets.length === 0) {
+        out += '  None \n';
+      } else {
+        evalResult.pureSets.forEach(setGroup => {
+          out += '  • ' + setGroup.join(', ') + '\n';
         });
       }
 
@@ -441,7 +481,7 @@
         out += '  ' + evalResult.leftover.join(', ') + '\n';
       }
 
-      // Total:
+      // Total points:
       out += '\n<div class="section-title">Total Points (capped at 80):</div>';
       out += '  ' + evalResult.points + '\n';
 
