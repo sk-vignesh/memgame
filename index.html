@@ -1,187 +1,998 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Memory Pattern Game</title>
+  <meta charset="UTF-8" />
+  <title>Two-Player Rummy with Auto-Grouping</title>
   <style>
-    /* Basic reset and centering */
+    /* ------------------------ */
+    /* Global / Layout Styling  */
+    /* ------------------------ */
     body {
-      display: flex;              /* Use flexbox for easy centering */
-      flex-direction: column;     /* Stack header, grid, controls vertically */
-      align-items: center;        /* Center horizontally */
-      justify-content: center;    /* Center vertically */
-      min-height: 100vh;          /* Full viewport height */
-      font-family: sans-serif;
-      background: #f0f0f0;
-      margin: 0;
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background: #f9f9f9;
+      color: #333;
     }
-
-    /* Game title spacing */
-    h1 {
-      margin-bottom: 20px;
+    h1, h2, h3, h4 {
+      margin: 10px 0 5px;
     }
-
-    /* Grid container for tiles */
-    #game {
-      display: grid;
-      grid-template-columns: repeat(3, 100px); /* 3 columns of equal width */
-      grid-gap: 10px;                           /* Space between tiles */
-      margin-bottom: 20px;
+    .game-area {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 20px;
     }
-
-    /* Individual tile styling */
-    .tile {
-      width: 100px;
-      height: 100px;
-      background: #ccc;
-      border-radius: 10px;
-      cursor: pointer;
-      transition: background 0.2s; /* Smooth color change */
+    .player-section {
+      width: 48%;
+      background: #fff;
+      padding: 15px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
     }
-
-    /* Active (flashed) tile state */
-    .tile.active {
-      background: #4caf50; /* Highlight color */
-    }
-
-    /* Start button styling */
-    #startButton {
-      padding: 10px 20px;
-      font-size: 16px;
-      cursor: pointer;
-      border: none;
-      background: #2196f3;
-      color: white;
-      border-radius: 5px;
-      transition: background 0.2s;
-    }
-    #startButton:hover {
-      background: #1976d2; /* Darker on hover */
-    }
-
-    /* Status text below controls */
     #status {
-      margin-top: 10px;
-      font-size: 18px;
+      margin-top: 15px;
+      font-weight: bold;
+      color: #555;
+    }
+
+    /* ----------------------------- */
+    /* Hand Area / Card Styling      */
+    /* ----------------------------- */
+    .hand {
+      display: flex;
+      flex-wrap: wrap;
+      min-height: 80px;
+      border: 1px dashed #bbb;
+      padding: 8px;
+      margin-bottom: 10px;
+      flex-direction: column; /* allow suit rows when sorted */
+    }
+    .hand:not(.sorted) {
+      flex-direction: row;  /* default single-row layout */
+    }
+    .suit-row {
+      display: flex;
+      flex-wrap: wrap;
+      margin-bottom: 4px;
+    }
+    .card {
+      width: 50px;
+      height: 70px;
+      line-height: 70px;
+      text-align: center;
+      border: 1px solid #555;
+      border-radius: 4px;
+      margin: 3px;
+      background: #f0f0f0;
+      cursor: pointer;
+      user-select: none;
+      color: black; /* default */
+    }
+    .card.selected {
+      outline: 3px solid #007bff;
+    }
+    .card.in-group {
+      background: #d1ffd1;
+      border-color: #28a745;
+    }
+    /* Suit colour overrides */
+    .red-suit {
+      color: red !important;
+    }
+    .black-suit {
+      color: black !important;
+    }
+
+    /* ----------------------------- */
+    /* Controls / Buttons             */
+    /* ----------------------------- */
+    .controls {
+      margin-bottom: 10px;
+    }
+    .controls button {
+      padding: 6px 12px;
+      margin-right: 5px;
+      cursor: pointer;
+    }
+
+    /* ----------------------------- */
+    /* Group‐boxes Styling            */
+    /* ----------------------------- */
+    .groups {
+      display: flex;
+      flex-wrap: wrap;
+      min-height: 60px;
+      border: 1px dashed #bbb;
+      padding: 8px;
+      margin-bottom: 15px;
+    }
+    .group-box {
+      position: relative;
+      border: 1px solid #888;
+      border-radius: 4px;
+      padding: 5px;
+      margin: 4px;
+      background: #f7f7f7;
+      min-width: 60px;
+      min-height: 60px;
+    }
+    .validation-mark {
+      position: absolute;
+      top: 2px;
+      left: 4px;
+      font-size: 1.2em;
+      font-weight: bold;
+    }
+
+    /* ----------------------------- */
+    /* Deck / Discard Pile Styling    */
+    /* ----------------------------- */
+    .pile-display {
+      display: flex;
+      margin-top: 15px;
+    }
+    .pile {
+      margin-right: 20px;
+      text-align: center;
+    }
+    .pile .card {
+      width: 60px;
+      height: 80px;
+      line-height: 80px;
     }
   </style>
 </head>
 <body>
-  <h1>Memory Pattern Game</h1>
-  <div id="game"></div>
-  <button id="startButton">Start Game</button>
-  <div id="status"></div>
+  <h1>Two-Player Rummy with Auto-Grouping</h1>
+  <p>
+    After the initial deal, any valid <strong>pure sets</strong> (three cards of the same rank) or 
+    <strong>pure sequences</strong> (three consecutive cards of the same suit, no Jokers) 
+    are automatically grouped. Then you can continue playing as usual:
+  </p>
+  <ul>
+    <li>Draw from Deck or Discard.</li>
+    <li>Create new groups and drag cards into them.</li>
+    <li>Click “Validate Groups” to check each group (✓ = valid, ✗ = invalid).</li>
+    <li>Click “Sort” to group your hand by suit and sort within each suit.</li>
+    <li>Click “Evaluate” to see your current ungrouped‐card points total (A/10/J/Q/K = 10, numeric = face value, Joker = 0).</li>
+    <li>Once you end up with exactly 13 cards in groups and 1 in hand, click “Show”—your opponent’s ungrouped cards are scored, and the game ends.</li>
+  </ul>
+  <div id="status">Initialising game…</div>
+
+  <div class="game-area">
+    <!-- -------------------------------- -->
+    <!-- Player 1 Section                 -->
+    <!-- -------------------------------- -->
+    <div class="player-section" id="player1-section">
+      <h2>Player 1 Hand</h2>
+      <div class="hand" id="player1-hand"></div>
+
+      <div class="controls">
+        <button id="p1-draw-deck" disabled>Draw from Deck</button>
+        <button id="p1-draw-discard" disabled>Draw from Discard</button>
+        <button id="p1-new-group">New Group</button>
+        <button id="p1-validate">Validate Groups</button>
+        <button id="p1-sort">Sort</button>
+        <button id="p1-evaluate">Evaluate</button>
+        <button id="p1-show" disabled>Show</button>
+      </div>
+
+      <h3>Group Areas (Drop cards here)</h3>
+      <div class="groups" id="player1-groups">
+        <!-- Dynamically generated group-boxes go here -->
+      </div>
+
+      <div class="pile-display">
+        <div class="pile">
+          <h4>Discard Pile</h4>
+          <div class="card" id="discard-top">?</div>
+        </div>
+        <div class="pile">
+          <h4>Deck</h4>
+          <div class="card" id="deck-top">🂠</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- -------------------------------- -->
+    <!-- Player 2 Section                 -->
+    <!-- -------------------------------- -->
+    <div class="player-section" id="player2-section">
+      <h2>Player 2 Hand</h2>
+      <div class="hand" id="player2-hand"></div>
+
+      <div class="controls">
+        <button id="p2-draw-deck" disabled>Draw from Deck</button>
+        <button id="p2-draw-discard" disabled>Draw from Discard</button>
+        <button id="p2-new-group">New Group</button>
+        <button id="p2-validate">Validate Groups</button>
+        <button id="p2-sort">Sort</button>
+        <button id="p2-evaluate">Evaluate</button>
+        <button id="p2-show" disabled>Show</button>
+      </div>
+
+      <h3>Group Areas (Drop cards here)</h3>
+      <div class="groups" id="player2-groups">
+        <!-- Dynamically generated group-boxes go here -->
+      </div>
+
+      <div class="pile-display">
+        <!-- These are hidden placeholders so layout remains consistent -->
+        <div class="pile" style="visibility: hidden;">
+          <h4>Discard Pile</h4>
+          <div class="card" id="dummy-discard">?</div>
+        </div>
+        <div class="pile" style="visibility: hidden;">
+          <h4>Deck</h4>
+          <div class="card" id="dummy-deck">🂠</div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script>
+    // ================================
+    //      Two-Player Rummy JS
+    //      (with Auto-Grouping)
+    // ================================
     document.addEventListener('DOMContentLoaded', () => {
-      // Configuration
-      const gridSize = 3; // Number of rows and columns
-      const totalTiles = gridSize * gridSize;
+      // === Utility Functions ===
 
-      // DOM references
-      const gameContainer = document.getElementById('game');
-      const startButton = document.getElementById('startButton');
-      const statusDiv = document.getElementById('status');
-
-      // Game state variables
-      let sequence = [];        // The generated pattern to remember
-      let userSequence = [];    // What the user has tapped
-      let level = 1;            // Current level (controls pattern length)
-      let acceptingInput = false; // Flag: is user input allowed?
-
-      // --- INITIAL SETUP ---
-      // Dynamically create the grid tiles and attach click handlers
-      for (let i = 0; i < totalTiles; i++) {
-        const tile = document.createElement('div');
-        tile.classList.add('tile');
-        tile.dataset.index = i; // Store tile index for reference
-        tile.addEventListener('click', () => handleTileClick(i));
-        gameContainer.appendChild(tile);
+      function createDeck() {
+        const suits = ['♥', '♦', '♣', '♠'];
+        const ranks = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+        const deck = [];
+        // Build standard 52 cards
+        suits.forEach(suit => {
+          ranks.forEach(rank => {
+            deck.push(rank + suit);
+          });
+        });
+        // Add two Jokers (wildcards)
+        deck.push('JOK');
+        deck.push('JOK');
+        return deck;
       }
 
-      // Start or restart the game
-      function startGame() {
-        level = 1;
-        statusDiv.textContent = `Level ${level}`;
-        nextRound();
+      function shuffle(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [array[i], array[j]] = [array[j], array[i]];
+        }
+        return array;
       }
 
-      // Setup and play the next round
-      function nextRound() {
-        userSequence = [];                        // Reset user's taps
-        sequence = generateSequence(level + 2);   // Pattern grows with level
-        playSequence();                           // Show it to the user
+      // Map face-card ranks to numeric values for sorting/sequencing
+      const rankMap = {
+        'A': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6,
+        '7': 7, '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13
+        // Jokers not included here
+      };
+
+      // === Game State ===
+
+      const gameState = {
+        deck: [],
+        discardPile: [],
+        players: [
+          { hand: [], name: 'Player 1', groups: [], groupValidities: [], sorted: false },
+          { hand: [], name: 'Player 2', groups: [], groupValidities: [], sorted: false }
+        ],
+        currentPlayerIndex: 0,
+        hasDrawn: false
+      };
+
+      // === DOM References ===
+
+      const statusDiv           = document.getElementById('status');
+
+      const p1HandDiv           = document.getElementById('player1-hand');
+      const p2HandDiv           = document.getElementById('player2-hand');
+
+      const p1GroupsDiv         = document.getElementById('player1-groups');
+      const p2GroupsDiv         = document.getElementById('player2-groups');
+
+      const deckTopDiv          = document.getElementById('deck-top');
+      const discardTopDiv       = document.getElementById('discard-top');
+
+      const p1DrawDeckBtn       = document.getElementById('p1-draw-deck');
+      const p1DrawDiscardBtn    = document.getElementById('p1-draw-discard');
+      const p1NewGroupBtn       = document.getElementById('p1-new-group');
+      const p1ValidateBtn       = document.getElementById('p1-validate');
+      const p1SortBtn           = document.getElementById('p1-sort');
+      const p1EvaluateBtn       = document.getElementById('p1-evaluate');
+      const p1ShowBtn           = document.getElementById('p1-show');
+
+      const p2DrawDeckBtn       = document.getElementById('p2-draw-deck');
+      const p2DrawDiscardBtn    = document.getElementById('p2-draw-discard');
+      const p2NewGroupBtn       = document.getElementById('p2-new-group');
+      const p2ValidateBtn       = document.getElementById('p2-validate');
+      const p2SortBtn           = document.getElementById('p2-sort');
+      const p2EvaluateBtn       = document.getElementById('p2-evaluate');
+      const p2ShowBtn           = document.getElementById('p2-show');
+
+      // === Initialization ===
+
+      function initialiseGame() {
+        // Prepare a fresh, shuffled deck with two Jokers
+        gameState.deck = shuffle(createDeck());
+        gameState.discardPile = [];
+        gameState.currentPlayerIndex = 0;
+        gameState.hasDrawn = false;
+
+        // Reset each player's hand, groups, validities, and sorted flag
+        gameState.players.forEach(player => {
+          player.hand = [];
+          player.groups = [];
+          player.groupValidities = [];
+          player.sorted = false;
+        });
+
+        // Deal 13 cards to each player
+        for (let i = 0; i < 13; i++) {
+          gameState.players[0].hand.push(gameState.deck.pop());
+          gameState.players[1].hand.push(gameState.deck.pop());
+        }
+
+        // Auto-group any valid pure sets/sequences right after dealing
+        autoGroup(0);
+        autoGroup(1);
+
+        // Flip one card onto the discard pile
+        gameState.discardPile.push(gameState.deck.pop());
+
+        updateUI();
+        updateStatus(`Turn: ${gameState.players[0].name}. Please draw a card.`);
+        enableButtons();
       }
 
-      // Generate a random sequence of tile indices
-      function generateSequence(length) {
-        return Array.from(
-          { length },
-          () => Math.floor(Math.random() * totalTiles)
+      function updateStatus(msg) {
+        statusDiv.textContent = msg;
+      }
+
+      // === UI Rendering ===
+
+      function updateUI() {
+        renderHand(p1HandDiv, 0);
+        renderHand(p2HandDiv, 1);
+        renderGroups(p1GroupsDiv, 0);
+        renderGroups(p2GroupsDiv, 1);
+
+        // Update deck & discard visuals
+        deckTopDiv.textContent    = gameState.deck.length;
+        discardTopDiv.textContent = gameState.discardPile.length
+          ? gameState.discardPile[gameState.discardPile.length - 1]
+          : '–';
+
+        // Enable or disable “Show” based on total card count
+        const idx         = gameState.currentPlayerIndex;
+        const handCount   = gameState.players[idx].hand.length;
+        const groupedCount= gameState.players[idx].groups.reduce((sum, g) => sum + g.length, 0);
+        const showBtn     = idx === 0 ? p1ShowBtn : p2ShowBtn;
+        showBtn.disabled  = !(
+          gameState.hasDrawn &&
+          (handCount + groupedCount === 14)
         );
       }
 
-      // Display the sequence by flashing tiles in order
-      function playSequence() {
-        acceptingInput = false;           // Temporarily block taps
-        statusDiv.textContent = 'Watch the sequence!';
+      function renderHand(containerDiv, playerIdx) {
+        containerDiv.innerHTML = '';
+        const player = gameState.players[playerIdx];
 
-        sequence.forEach((index, i) => {
-          // Schedule each activation/deactivation
-          setTimeout(() => activateTile(index), i * 1000);
-          setTimeout(() => deactivateTile(index), i * 1000 + 600);
+        if (player.sorted) {
+          // If sorted, group by suit (♣, ♦, ♥, ♠) and sort within each suit
+          const suitOrder = ['♣', '♦', '♥', '♠'];
+          suitOrder.forEach(suitSymbol => {
+            // Filter cards of this suit (excluding Jokers)
+            let cardsOfSuit = player.hand.filter(card => card.endsWith(suitSymbol));
+            if (cardsOfSuit.length) {
+              // Sort that subset by rank using rankMap
+              cardsOfSuit.sort((a, b) => {
+                const rankA = a.slice(0, -1);
+                const rankB = b.slice(0, -1);
+                return rankMap[rankA] - rankMap[rankB];
+              });
+
+              // Create a horizontal row for this suit
+              const rowDiv = document.createElement('div');
+              rowDiv.className = 'suit-row';
+
+              cardsOfSuit.forEach(card => {
+                // Find the first matching index in player.hand
+                const idxInHand = player.hand.indexOf(card);
+                if (idxInHand !== -1) {
+                  const cardDiv = document.createElement('div');
+                  cardDiv.className = 'card';
+                  cardDiv.textContent = card;
+                  cardDiv.dataset.player = playerIdx;
+                  cardDiv.dataset.index  = idxInHand;
+                  cardDiv.setAttribute('draggable', 'true');
+
+                  // Colour by suit
+                  if (suitSymbol === '♥' || suitSymbol === '♦') {
+                    cardDiv.classList.add('red-suit');
+                  } else {
+                    cardDiv.classList.add('black-suit');
+                  }
+
+                  // Drag-start for grouping
+                  cardDiv.addEventListener('dragstart', ev => {
+                    ev.dataTransfer.setData('text/plain', `${playerIdx},${idxInHand}`);
+                  });
+
+                  // Click to discard (if it's this player's turn & they've drawn)
+                  if (gameState.currentPlayerIndex === playerIdx && gameState.hasDrawn) {
+                    cardDiv.addEventListener('click', () => {
+                      discardCard(playerIdx, idxInHand);
+                    });
+                    cardDiv.style.cursor = 'pointer';
+                  }
+
+                  rowDiv.appendChild(cardDiv);
+                }
+              });
+
+              containerDiv.appendChild(rowDiv);
+            }
+          });
+
+          // Finally, show any Jokers on their own row
+          const jokers = player.hand.filter(c => c === 'JOK');
+          if (jokers.length) {
+            const jokerRow = document.createElement('div');
+            jokerRow.className = 'suit-row';
+            jokers.forEach(card => {
+              const idxInHand = player.hand.indexOf(card);
+              if (idxInHand !== -1) {
+                const cardDiv = document.createElement('div');
+                cardDiv.className = 'card';
+                cardDiv.textContent = card;
+                cardDiv.dataset.player = playerIdx;
+                cardDiv.dataset.index  = idxInHand;
+                cardDiv.setAttribute('draggable', 'true');
+
+                // Jokers are always black
+                cardDiv.classList.add('black-suit');
+
+                cardDiv.addEventListener('dragstart', ev => {
+                  ev.dataTransfer.setData('text/plain', `${playerIdx},${idxInHand}`);
+                });
+
+                if (gameState.currentPlayerIndex === playerIdx && gameState.hasDrawn) {
+                  cardDiv.addEventListener('click', () => {
+                    discardCard(playerIdx, idxInHand);
+                  });
+                  cardDiv.style.cursor = 'pointer';
+                }
+
+                jokerRow.appendChild(cardDiv);
+              }
+            });
+            containerDiv.appendChild(jokerRow);
+          }
+        } else {
+          // Not sorted: single flex row
+          player.hand.forEach((card, idx) => {
+            const cardDiv = document.createElement('div');
+            cardDiv.className = 'card';
+            cardDiv.textContent = card;
+            cardDiv.dataset.player = playerIdx;
+            cardDiv.dataset.index  = idx;
+            cardDiv.setAttribute('draggable', 'true');
+
+            // Colour by suit or black for Joker
+            if (card === 'JOK') {
+              cardDiv.classList.add('black-suit');
+            } else {
+              const suitSymbol = card.slice(-1);
+              if (suitSymbol === '♥' || suitSymbol === '♦') {
+                cardDiv.classList.add('red-suit');
+              } else {
+                cardDiv.classList.add('black-suit');
+              }
+            }
+
+            // Drag-start for grouping
+            cardDiv.addEventListener('dragstart', ev => {
+              ev.dataTransfer.setData('text/plain', `${playerIdx},${idx}`);
+            });
+
+            // Click to discard (if it's this player's turn & they've drawn)
+            if (gameState.currentPlayerIndex === playerIdx && gameState.hasDrawn) {
+              cardDiv.addEventListener('click', () => {
+                discardCard(playerIdx, idx);
+              });
+              cardDiv.style.cursor = 'pointer';
+            }
+
+            containerDiv.appendChild(cardDiv);
+          });
+        }
+      }
+
+      function renderGroups(containerDiv, playerIdx) {
+        containerDiv.innerHTML = '';
+        const player = gameState.players[playerIdx];
+
+        player.groups.forEach((groupArr, groupIdx) => {
+          const groupBox = document.createElement('div');
+          groupBox.className = 'group-box';
+          groupBox.dataset.player = playerIdx;
+          groupBox.dataset.group  = groupIdx;
+
+          // If this group has been validated, show ✓ or ✗
+          if (player.groupValidities[groupIdx] !== undefined) {
+            const symbol = player.groupValidities[groupIdx] ? '✓' : '✗';
+            const mark = document.createElement('div');
+            mark.className = 'validation-mark';
+            mark.textContent = symbol;
+            groupBox.appendChild(mark);
+          }
+
+          // Make group-box a drop target
+          groupBox.addEventListener('dragover', ev => ev.preventDefault());
+          groupBox.addEventListener('drop', ev => {
+            ev.preventDefault();
+            handleDrop(ev, playerIdx, groupIdx);
+          });
+
+          // Render cards in this group
+          groupArr.forEach(card => {
+            const c = document.createElement('div');
+            c.className = 'card in-group';
+            c.textContent = card;
+
+            // Colour by suit or black for Joker
+            if (card === 'JOK') {
+              c.classList.add('black-suit');
+            } else {
+              const suitSymbol = card.slice(-1);
+              if (suitSymbol === '♥' || suitSymbol === '♦') {
+                c.classList.add('red-suit');
+              } else {
+                c.classList.add('black-suit');
+              }
+            }
+
+            // Draggable back to hand
+            c.setAttribute('draggable', 'true');
+            c.addEventListener('dragstart', ev => {
+              ev.dataTransfer.setData(
+                'text/plain',
+                `${playerIdx},g${groupIdx},${card}`
+              );
+            });
+
+            groupBox.appendChild(c);
+          });
+
+          containerDiv.appendChild(groupBox);
+        });
+      }
+
+      // === Button Enabling / Disabling ===
+
+      function enableButtons() {
+        const idx = gameState.currentPlayerIndex;
+
+        // Draw buttons enabled only for that player
+        if (idx === 0) {
+          p1DrawDeckBtn.disabled    = false;
+          p1DrawDiscardBtn.disabled = false;
+          p2DrawDeckBtn.disabled    = true;
+          p2DrawDiscardBtn.disabled = true;
+        } else {
+          p1DrawDeckBtn.disabled    = true;
+          p1DrawDiscardBtn.disabled = true;
+          p2DrawDeckBtn.disabled    = false;
+          p2DrawDiscardBtn.disabled = false;
+        }
+
+        // “New Group”, “Validate Groups”, “Sort”, “Evaluate” always enabled
+        p1NewGroupBtn.disabled   = false;
+        p1ValidateBtn.disabled   = false;
+        p1SortBtn.disabled       = false;
+        p1EvaluateBtn.disabled   = false;
+        p2NewGroupBtn.disabled   = false;
+        p2ValidateBtn.disabled   = false;
+        p2SortBtn.disabled       = false;
+        p2EvaluateBtn.disabled   = false;
+
+        updateUI();
+      }
+
+      function disableButtons() {
+        // Disable draw & discard for both
+        p1DrawDeckBtn.disabled    = true;
+        p1DrawDiscardBtn.disabled = true;
+        p2DrawDeckBtn.disabled    = true;
+        p2DrawDiscardBtn.disabled = true;
+
+        // “New Group”, “Validate Groups”, “Sort”, “Evaluate” remain enabled
+        p1NewGroupBtn.disabled   = false;
+        p1ValidateBtn.disabled   = false;
+        p1SortBtn.disabled       = false;
+        p1EvaluateBtn.disabled   = false;
+        p2NewGroupBtn.disabled   = false;
+        p2ValidateBtn.disabled   = false;
+        p2SortBtn.disabled       = false;
+        p2EvaluateBtn.disabled   = false;
+
+        // “Show” disabled until correct conditions
+        p1ShowBtn.disabled = true;
+        p2ShowBtn.disabled = true;
+      }
+
+      // === Gameplay Logic ===
+
+      function drawFromDeck() {
+        if (!gameState.hasDrawn) {
+          if (gameState.deck.length === 0) {
+            if (gameState.discardPile.length <= 1) {
+              alert('No cards left to draw.');
+              return;
+            }
+            // Shuffle all but top discard back into deck
+            const topCard = gameState.discardPile.pop();
+            gameState.deck = shuffle(gameState.discardPile);
+            gameState.discardPile = [topCard];
+          }
+          const card = gameState.deck.pop();
+          gameState.players[gameState.currentPlayerIndex].hand.push(card);
+          gameState.hasDrawn = true;
+          updateStatus(
+            `${gameState.players[gameState.currentPlayerIndex].name} drew from deck.`
+          );
+          disableButtons();
+          updateUI();
+        }
+      }
+
+      function drawFromDiscard() {
+        if (!gameState.hasDrawn) {
+          if (!gameState.discardPile.length) {
+            alert('Discard pile is empty.');
+            return;
+          }
+          const card = gameState.discardPile.pop();
+          gameState.players[gameState.currentPlayerIndex].hand.push(card);
+          gameState.hasDrawn = true;
+          updateStatus(
+            `${gameState.players[gameState.currentPlayerIndex].name} drew from discard.`
+          );
+          disableButtons();
+          updateUI();
+        }
+      }
+
+      function createNewGroup(playerIdx) {
+        // Add an empty array for that player's new group
+        gameState.players[playerIdx].groups.push([]);
+        // Reset validity marker
+        gameState.players[playerIdx].groupValidities.push(undefined);
+        updateUI();
+      }
+
+      function handleDrop(ev, targetPlayerIdx, targetGroupIdx) {
+        const data = ev.dataTransfer.getData('text/plain');
+        if (!data) return;
+
+        const parts = data.split(',');
+        const sourcePlayerIdx = parseInt(parts[0], 10);
+
+        // Drag from hand into a group: parts = [playerIdx, cardIdx]
+        if (parts.length === 2 && !parts[1].startsWith('g')) {
+          const cardIdx = parseInt(parts[1], 10);
+          if (sourcePlayerIdx === targetPlayerIdx) {
+            const cardValue = gameState.players[sourcePlayerIdx].hand.splice(cardIdx, 1)[0];
+            gameState.players[targetPlayerIdx].groups[targetGroupIdx].push(cardValue);
+            // Reset that group's validity
+            gameState.players[targetPlayerIdx].groupValidities[targetGroupIdx] = undefined;
+            updateUI();
+          }
+        }
+        // Drag from group back into hand: parts = [playerIdx, 'g<groupIdx>', cardValue]
+        else if (parts.length === 3 && parts[1].startsWith('g')) {
+          const sourceGroupIdx = parseInt(parts[1].slice(1), 10);
+          const cardValue = parts[2];
+          if (sourcePlayerIdx === targetPlayerIdx) {
+            const grpArr = gameState.players[sourcePlayerIdx].groups[sourceGroupIdx];
+            const removeIdx = grpArr.indexOf(cardValue);
+            if (removeIdx !== -1) {
+              grpArr.splice(removeIdx, 1);
+              gameState.players[sourcePlayerIdx].groupValidities[sourceGroupIdx] = undefined;
+              gameState.players[sourcePlayerIdx].hand.push(cardValue);
+              updateUI();
+            }
+          }
+        }
+      }
+
+      function discardCard(playerIdx, cardIdx) {
+        if (gameState.currentPlayerIndex !== playerIdx || !gameState.hasDrawn) return;
+        const card = gameState.players[playerIdx].hand.splice(cardIdx, 1)[0];
+        gameState.discardPile.push(card);
+
+        // After discarding, switch to next player
+        gameState.hasDrawn = false;
+        gameState.currentPlayerIndex = 1 - gameState.currentPlayerIndex;
+        updateStatus(`Turn: ${gameState.players[gameState.currentPlayerIndex].name}. Please draw a card.`);
+        enableButtons();
+        updateUI();
+      }
+
+      // Count a single card’s points: A/10/J/Q/K = 10, numeric cards = face value, Joker = 0
+      function cardPointValue(card) {
+        if (card === 'JOK') return 0;
+        const rank = card.slice(0, -1);
+        if (['A','10','J','Q','K'].includes(rank)) return 10;
+        return parseInt(rank, 10);
+      }
+
+      // “Evaluate” simply sums points of all cards still in the player’s hand
+      function evaluatePoints(playerIdx) {
+        const player = gameState.players[playerIdx];
+        let total = 0;
+        player.hand.forEach(card => {
+          total += cardPointValue(card);
+        });
+        updateStatus(`${player.name} has ${total} points in ungrouped cards.`);
+      }
+
+      // Show / Scoring logic
+      function attemptShow(playerIdx) {
+        const player = gameState.players[playerIdx];
+        const handCount    = player.hand.length;                        
+        const groupedCount = player.groups.reduce((sum, grp) => sum + grp.length, 0);
+
+        // Valid if exactly 13 cards in groups and 1 in hand
+        if (groupedCount === 13 && handCount === 1) {
+          // Compute opponent’s points: sum of values of all cards in their hand
+          const oppIdx = 1 - playerIdx;
+          const oppHand = gameState.players[oppIdx].hand;
+          let points = 0;
+          oppHand.forEach(card => {
+            points += cardPointValue(card);
+          });
+
+          updateStatus(
+            `${player.name} has declared! ${gameState.players[oppIdx].name} scores ${points} points.`
+          );
+          disableButtons();
+          return;
+        }
+
+        alert('Invalid declaration. You must have exactly 13 cards grouped and 1 card in hand.');
+      }
+
+      // === Validation Logic ===
+
+      function validateGroup(cards) {
+        if (cards.length < 3) return false;
+
+        // Separate jokers from non-joker cards
+        const jokers = cards.filter(c => c === 'JOK');
+        const nonJokers = cards.filter(c => c !== 'JOK');
+
+        // If no non-joker cards, cannot form a valid group
+        if (nonJokers.length === 0) return false;
+
+        // Extract suits and ranks of non-joker cards
+        const suitsArr = nonJokers.map(c => c.slice(-1));
+        const ranksArr = nonJokers.map(c => c.slice(0, -1));
+
+        // 1) Check for Set: all non-jokers share same rank, distinct suits
+        const allSameRank = ranksArr.every(r => r === ranksArr[0]);
+        if (allSameRank) {
+          const uniqueSuits = new Set(suitsArr);
+          if (uniqueSuits.size === ranksArr.length) {
+            return true; // jokers can fill to any length ≥ 3
+          }
+        }
+
+        // 2) Check for Impure Sequence:
+        //    All non-joker cards share the same suit, 
+        //    and we can place them in a consecutive run with jokers filling gaps.
+        const suitForSequence = suitsArr[0];
+        if (!suitsArr.every(s => s === suitForSequence)) {
+          return false;
+        }
+
+        // Convert non-joker ranks into numbers
+        let numericRanks = ranksArr.map(r => {
+          if (r === 'A') return null; 
+          if (r === 'J') return 11;
+          if (r === 'Q') return 12;
+          if (r === 'K') return 13;
+          return parseInt(r, 10);
         });
 
-        // After the full sequence, allow user input
-        setTimeout(() => {
-          acceptingInput = true;
-          statusDiv.textContent = 'Your turn!';
-        }, sequence.length * 1000);
-      }
-
-      // Add 'active' class to flash a tile
-      function activateTile(index) {
-        const tile = document.querySelector(`.tile[data-index='${index}']`);
-        tile.classList.add('active');
-      }
-
-      // Remove 'active' class to turn tile back off
-      function deactivateTile(index) {
-        const tile = document.querySelector(`.tile[data-index='${index}']`);
-        tile.classList.remove('active');
-      }
-
-      // Handle user's tile taps
-      function handleTileClick(index) {
-        if (!acceptingInput) return;      // Ignore taps if not in input phase
-
-        userSequence.push(index);          // Record tap
-        activateTile(index);               // Flash tile on tap
-        setTimeout(() => deactivateTile(index), 200); // Quick flash feedback
-
-        const step = userSequence.length - 1;
-        // Check correctness of this step
-        if (userSequence[step] !== sequence[step]) {
-          return gameOver();               // End game on mistake
+        // If any non-joker is Q/K along with an A, treat A as 14; otherwise A = 1
+        let aceValue = 1;
+        if (ranksArr.includes('A') && (ranksArr.includes('Q') || ranksArr.includes('K'))) {
+          aceValue = 14;
         }
+        numericRanks = numericRanks.map(n => (n === null ? aceValue : n));
+        numericRanks.sort((a, b) => a - b);
 
-        // If full sequence matched, advance level
-        if (userSequence.length === sequence.length) {
-          level++;
-          statusDiv.textContent = `Correct! Level up to ${level}`;
-          setTimeout(nextRound, 1000);   // Pause briefly before next
+        // Compute the numeric “span” from min to max
+        const minRank = numericRanks[0];
+        const maxRank = numericRanks[numericRanks.length - 1];
+        const neededSpan = maxRank - minRank + 1;
+
+        // If neededSpan ≤ total group length, jokers can fill in any gaps
+        if (neededSpan <= cards.length) {
+          return true;
         }
+        return false;
       }
 
-      // Handle end-of-game logic
-      function gameOver() {
-        acceptingInput = false;
-        statusDiv.textContent = `Game Over! You reached level ${level}.`;
+      function validateGroups(playerIdx) {
+        const player = gameState.players[playerIdx];
+        player.groupValidities = player.groups.map(groupArr => validateGroup(groupArr));
+        updateUI();
       }
 
-      // Wire up start button
-      startButton.addEventListener('click', startGame);
+      // === Auto-Grouping Logic ===
+
+      function autoGroup(playerIdx) {
+        const player = gameState.players[playerIdx];
+
+        // 1) Auto-group any pure sets (three or more same-rank, no jokers)
+        let rankBuckets = {};
+        // Build a map: rank → [indices of that rank in hand]
+        player.hand.forEach((card, idx) => {
+          if (card === 'JOK') return; // skip jokers
+          const rank = card.slice(0, -1);
+          if (!rankBuckets[rank]) rankBuckets[rank] = [];
+          rankBuckets[rank].push(idx);
+        });
+        // For each rank with count ≥ 3, take exactly three and form a group
+        Object.keys(rankBuckets).forEach(rank => {
+          const indices = rankBuckets[rank];
+          if (indices.length >= 3) {
+            // Form one group of exactly three (pure set)
+            const group = [];
+            // Sort indices descending so removing from hand does not shift earlier indices
+            indices.sort((a, b) => b - a);
+            for (let i = 0; i < 3; i++) {
+              const removeIdx = indices[i];
+              group.push(player.hand.splice(removeIdx, 1)[0]);
+            }
+            player.groups.push(group);
+            player.groupValidities.push(true); // pure set is always valid
+          }
+        });
+
+        // 2) Auto-group any pure sequences (three or more consecutive same-suit, no jokers)
+        const suitOrder = ['♣', '♦', '♥', '♠'];
+        suitOrder.forEach(suit => {
+          let keepSearching = true;
+          while (keepSearching) {
+            keepSearching = false;
+            // Collect all cards of this suit, with their indices and numeric rank
+            const suitCards = [];
+            player.hand.forEach((card, idx) => {
+              if (card.endsWith(suit) && card !== 'JOK') {
+                const rank = card.slice(0, -1);
+                const num = rankMap[rank];
+                suitCards.push({ card, idx, num });
+              }
+            });
+            // If fewer than 3 of this suit, cannot form a sequence
+            if (suitCards.length < 3) return;
+
+            // Sort by numeric rank
+            suitCards.sort((a, b) => a.num - b.num);
+
+            // Look for any run of length ≥ 3
+            for (let i = 0; i <= suitCards.length - 3; i++) {
+              let run = [ suitCards[i] ];
+              let prevNum = suitCards[i].num;
+              for (let j = i + 1; j < suitCards.length; j++) {
+                if (suitCards[j].num === prevNum + 1) {
+                  run.push(suitCards[j]);
+                  prevNum = suitCards[j].num;
+                } else {
+                  break;
+                }
+              }
+              if (run.length >= 3) {
+                // Found a valid pure sequence
+                const group = [];
+                // Remove them from hand (descending index order)
+                run.sort((x, y) => y.idx - x.idx);
+                run.forEach(item => {
+                  group.push(player.hand.splice(item.idx, 1)[0]);
+                });
+                player.groups.push(group);
+                player.groupValidities.push(true);
+                keepSearching = true;
+                break; // start over for this suit in case more sequences remain
+              }
+            }
+          }
+        });
+      }
+
+      // === Sort Logic ===
+
+      function sortHand(playerIdx) {
+        gameState.players[playerIdx].sorted = true;
+        updateUI();
+      }
+
+      // === Event Listeners ===
+
+      // Draw buttons
+      p1DrawDeckBtn.addEventListener('click', () => drawFromDeck());
+      p1DrawDiscardBtn.addEventListener('click', () => drawFromDiscard());
+      p2DrawDeckBtn.addEventListener('click', () => drawFromDeck());
+      p2DrawDiscardBtn.addEventListener('click', () => drawFromDiscard());
+
+      // New Group buttons
+      p1NewGroupBtn.addEventListener('click', () => createNewGroup(0));
+      p2NewGroupBtn.addEventListener('click', () => createNewGroup(1));
+
+      // Validate Groups buttons
+      p1ValidateBtn.addEventListener('click', () => validateGroups(0));
+      p2ValidateBtn.addEventListener('click', () => validateGroups(1));
+
+      // Sort buttons
+      p1SortBtn.addEventListener('click', () => sortHand(0));
+      p2SortBtn.addEventListener('click', () => sortHand(1));
+
+      // Evaluate buttons
+      p1EvaluateBtn.addEventListener('click', () => evaluatePoints(0));
+      p2EvaluateBtn.addEventListener('click', () => evaluatePoints(1));
+
+      // Show buttons
+      p1ShowBtn.addEventListener('click', () => attemptShow(0));
+      p2ShowBtn.addEventListener('click', () => attemptShow(1));
+
+      // Discard-pile drop target for drag-discard
+      discardTopDiv.addEventListener('dragover', ev => ev.preventDefault());
+      discardTopDiv.addEventListener('drop', ev => {
+        ev.preventDefault();
+        const data = ev.dataTransfer.getData('text/plain');
+        if (!data) return;
+        const parts = data.split(',');
+        const sourcePlayerIdx = parseInt(parts[0], 10);
+        if (parts.length === 2 && !parts[1].startsWith('g')) {
+          const cardIdx = parseInt(parts[1], 10);
+          if (sourcePlayerIdx === gameState.currentPlayerIndex) {
+            discardCard(sourcePlayerIdx, cardIdx);
+          }
+        }
+      });
+
+      // Hand drop target: allow dragging a grouped card back to hand
+      [p1HandDiv, p2HandDiv].forEach((handDiv, idx) => {
+        handDiv.addEventListener('dragover', ev => ev.preventDefault());
+        handDiv.addEventListener('drop', ev => {
+          ev.preventDefault();
+          const data = ev.dataTransfer.getData('text/plain');
+          if (!data) return;
+          const parts = data.split(',');
+          if (parts.length === 3 && parts[1].startsWith('g')) {
+            const sourcePlayerIdx = parseInt(parts[0], 10);
+            const sourceGroupIdx  = parseInt(parts[1].slice(1), 10);
+            const cardValue       = parts[2];
+            if (sourcePlayerIdx === idx) {
+              const grpArr = gameState.players[idx].groups[sourceGroupIdx];
+              const removeIdx = grpArr.indexOf(cardValue);
+              if (removeIdx !== -1) {
+                grpArr.splice(removeIdx, 1);
+                gameState.players[idx].groupValidities[sourceGroupIdx] = undefined;
+                gameState.players[idx].hand.push(cardValue);
+                updateUI();
+              }
+            }
+          }
+        });
+      });
+
+      // Start the game
+      initialiseGame();
     });
   </script>
 </body>
