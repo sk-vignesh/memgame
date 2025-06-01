@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Rummy Assistant (Side‐by‐Side Output & Exclude Wildcard from Missing)</title>
+  <title>Rummy Assistant (Weighted Probability & Exclude Wildcard)</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -79,7 +79,7 @@
   </style>
 </head>
 <body>
-  <h1>Rummy Assistant (Side‐by‐Side Output & Exclude Wildcard from Missing)</h1>
+  <h1>Rummy Assistant (Weighted Probability & Exclude Wildcard)</h1>
   <p>
     Enter exactly 13 cards total. For each suit (
     <span class="suit-black">♣</span>, 
@@ -177,6 +177,63 @@
     }
     function stripColor(colored) {
       return colored.replace(/<[^>]+>/g, '');
+    }
+
+    // Build the full 106-card deck (2× each rank+suit, plus 2 jokers)
+    function buildFullDeck() {
+      const suits = ['♣','♦','♥','♠'];
+      const ranks = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+      const deck = [];
+      suits.forEach(s => {
+        ranks.forEach(r => {
+          deck.push(r + s);
+          deck.push(r + s);
+        });
+      });
+      deck.push('JOK');
+      deck.push('JOK');
+      return deck;
+    }
+
+    // Weight function: 2–5 → 1, 6–9 → 2, 10/J/Q/K/A → 3; jokers → 0
+    function weightForCard(card) {
+      if (card === 'JOK') return 0;
+      const r = getRank(card);
+      const n = rankMap[r];
+      if (n >= 2 && n <= 5) return 1;
+      if (n >= 6 && n <= 9) return 2;
+      // 10, J, Q, K, A
+      return 3;
+    }
+
+    // Calculate weighted probability that next draw is a missing card
+    function calcWeightedProbability(playerCards, missingRaw) {
+      const fullDeck = buildFullDeck();
+      // Remove each of player's 13 cards from full deck (one copy each)
+      const remaining = fullDeck.slice();
+      playerCards.forEach(pc => {
+        const idx = remaining.indexOf(pc);
+        if (idx !== -1) remaining.splice(idx, 1);
+      });
+      // remaining now holds 93 cards
+
+      // Denominator: sum of weights of all remaining
+      let denom = 0;
+      remaining.forEach(c => {
+        denom += weightForCard(c);
+      });
+
+      // Numerator: for each missing rank+suit, count occurrences in remaining and multiply by its weight
+      let numer = 0;
+      missingRaw.forEach(m => {
+        const w = weightForCard(m);
+        // count how many copies of m in remaining
+        let count = 0;
+        remaining.forEach(rc => { if (rc === m) count++; });
+        numer += count * w;
+      });
+
+      return denom > 0 ? numer / denom : 0;
     }
 
     // Pure‐sequence detection
@@ -533,6 +590,7 @@
       const numsArr = Array.from(presentNums).sort((a,b)=>a-b);
       const missingSet = new Set();
 
+      // Gap logic
       for (let i = 0; i < numsArr.length; i++) {
         for (let j = i + 1; j < numsArr.length; j++) {
           const r1 = numsArr[i], r2 = numsArr[j];
@@ -552,8 +610,7 @@
 
       // Exclude designated wildcard rank
       if (designatedWild) {
-        const wildNum = rankMap[designatedWild];
-        missingSet.delete(wildNum);
+        missingSet.delete(rankMap[designatedWild]);
       }
 
       presentNums.forEach(n => missingSet.delete(n));
@@ -583,15 +640,6 @@
         }
       }
       return dups;
-    }
-
-    // Calculate probability of drawing one missing card next:
-    function calcWinProbability(missingCount) {
-      const totalDeck = 106; // 2 × 52 + 2 jokers
-      const known = 13;
-      const unknown = totalDeck - known;
-      if (missingCount <= 0) return 0;
-      return missingCount / unknown;
     }
 
     const clubsInput     = document.getElementById('clubsInput');
@@ -668,15 +716,15 @@
       const res = finalResult(cards.slice(), designatedWild);
       const missing = getMissingCards(cards, designatedWild);
 
-      // Count how many missing cards
+      // Flatten missing list and strip color to get raw rank+suit strings
       let missingFlat = [];
       ['♣','♦','♥','♠'].forEach(s => {
         missingFlat = missingFlat.concat(missing[s]);
       });
       const missingRaw = missingFlat.map(stripColor);
-      const missingCount = missingRaw.length;
 
-      const prob = calcWinProbability(missingCount);
+      // Calculate weighted probability
+      const weightedProb = calcWeightedProbability(cards, missingRaw);
 
       // LEFT PANE: Groups, Leftovers, Total Points
       let leftOut = '';
@@ -717,7 +765,7 @@
 
       leftPane.innerHTML = leftOut;
 
-      // RIGHT PANE: Missing Cards & Probability
+      // RIGHT PANE: Missing Cards & Weighted Probability
       let rightOut = '';
       rightOut += '<div class="section-title">Missing Cards for Pure Sequences:</div>\n';
       ['♣','♦','♥','♠'].forEach(s => {
@@ -726,9 +774,9 @@
         else rightOut += `  ${s}: ` + arr.join(', ') + `\n`;
       });
 
-      rightOut += '\n<div class="section-title">Win Probability (next draw):</div>\n';
-      const pct = (prob * 100).toFixed(2) + '%';
-      rightOut += `  ${missingCount} missing / 93 unknown → ${pct}\n`;
+      rightOut += '\n<div class="section-title">Weighted Win Probability (next draw):</div>\n';
+      const pct = (weightedProb * 100).toFixed(2) + '%';
+      rightOut += `  Weighted numerator / denominator → ${pct}\n`;
 
       rightPane.innerHTML = rightOut;
     });
