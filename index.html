@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Rummy Assistant (Weighted Probability & Exclude Wildcard)</title>
+  <title>Rummy Assistant (Adjusted Win Probability Without Joker Factor)</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -79,7 +79,7 @@
   </style>
 </head>
 <body>
-  <h1>Rummy Assistant (Weighted Probability & Exclude Wildcard)</h1>
+  <h1>Rummy Assistant (Adjusted Win Probability Without Joker Factor)</h1>
   <p>
     Enter exactly 13 cards total. For each suit (
     <span class="suit-black">♣</span>, 
@@ -202,37 +202,28 @@
       const n = rankMap[r];
       if (n >= 2 && n <= 5) return 1;
       if (n >= 6 && n <= 9) return 2;
-      // 10, J, Q, K, A
       return 3;
     }
 
     // Calculate weighted probability that next draw is a missing card
     function calcWeightedProbability(playerCards, missingRaw) {
       const fullDeck = buildFullDeck();
-      // Remove each of player's 13 cards from full deck (one copy each)
       const remaining = fullDeck.slice();
       playerCards.forEach(pc => {
         const idx = remaining.indexOf(pc);
         if (idx !== -1) remaining.splice(idx, 1);
       });
-      // remaining now holds 93 cards
-
-      // Denominator: sum of weights of all remaining
       let denom = 0;
       remaining.forEach(c => {
         denom += weightForCard(c);
       });
-
-      // Numerator: for each missing rank+suit, count occurrences in remaining and multiply by its weight
       let numer = 0;
       missingRaw.forEach(m => {
         const w = weightForCard(m);
-        // count how many copies of m in remaining
         let count = 0;
         remaining.forEach(rc => { if (rc === m) count++; });
         numer += count * w;
       });
-
       return denom > 0 ? numer / denom : 0;
     }
 
@@ -590,7 +581,6 @@
       const numsArr = Array.from(presentNums).sort((a,b)=>a-b);
       const missingSet = new Set();
 
-      // Gap logic
       for (let i = 0; i < numsArr.length; i++) {
         for (let j = i + 1; j < numsArr.length; j++) {
           const r1 = numsArr[i], r2 = numsArr[j];
@@ -603,16 +593,12 @@
           }
         }
       }
-      // A–K ⇒ Q logic
       if (presentNums.has(1) && presentNums.has(13)) {
         missingSet.add(12); // Q
       }
-
-      // Exclude designated wildcard rank
       if (designatedWild) {
         missingSet.delete(rankMap[designatedWild]);
       }
-
       presentNums.forEach(n => missingSet.delete(n));
       return Array.from(missingSet)
         .sort((a,b)=>a-b)
@@ -633,13 +619,13 @@
         if (c === 'JOK') return;
         freq[c] = (freq[c] || 0) + 1;
       });
-      const dups = [];
+      let dupCount = 0;
       for (const card in freq) {
         if (freq[card] > 1) {
-          dups.push(`${colorizeCard(card)} ×${freq[card]}`);
+          dupCount += (freq[card] - 1);
         }
       }
-      return dups;
+      return dupCount;
     }
 
     const clubsInput     = document.getElementById('clubsInput');
@@ -710,7 +696,7 @@
       }
 
       // Count duplicates
-      const duplicates = countDuplicates(cards);
+      const dupCount = countDuplicates(cards);
 
       const designatedWild = wildRank || null;
       const res = finalResult(cards.slice(), designatedWild);
@@ -726,16 +712,28 @@
       // Calculate weighted probability
       const weightedProb = calcWeightedProbability(cards, missingRaw);
 
+      // Sequence-based adjustment
+      const numPureSeq = res.pureSeqs.length;
+      const numImpureSeq = res.impureSeqs.length;
+      let sequenceFactor = 0;
+      if (numPureSeq + numImpureSeq >= 2) {
+        sequenceFactor = 0.50; // both sequences
+      } else if (numPureSeq >= 1) {
+        sequenceFactor = 0.35; // only one pure
+      }
+
+      // Duplicate penalty: each extra copy subtracts 0.05
+      const duplicateFactor = 0.05 * dupCount;
+
+      // Combined adjusted win probability
+      let adjustedProb = weightedProb + sequenceFactor - duplicateFactor;
+      if (adjustedProb < 0) adjustedProb = 0;
+      if (adjustedProb > 1) adjustedProb = 1;
+
       // LEFT PANE: Groups, Leftovers, Total Points
       let leftOut = '';
-      leftOut += '<div class="section-title">Duplicates:</div>\n';
-      if (duplicates.length === 0) {
-        leftOut += '  None\n';
-      } else {
-        duplicates.forEach(d => {
-          leftOut += '  ' + d + '\n';
-        });
-      }
+      leftOut += '<div class="section-title">Duplicate Count:</div>\n';
+      leftOut += `  ${dupCount}\n`;
 
       leftOut += '\n<div class="section-title">All Pure Sequences (length ≥ 3):</div>\n';
       if (res.pureSeqs.length === 0) leftOut += '  None \n';
@@ -765,7 +763,7 @@
 
       leftPane.innerHTML = leftOut;
 
-      // RIGHT PANE: Missing Cards & Weighted Probability
+      // RIGHT PANE: Missing Cards & Probabilities
       let rightOut = '';
       rightOut += '<div class="section-title">Missing Cards for Pure Sequences:</div>\n';
       ['♣','♦','♥','♠'].forEach(s => {
@@ -774,9 +772,17 @@
         else rightOut += `  ${s}: ` + arr.join(', ') + `\n`;
       });
 
-      rightOut += '\n<div class="section-title">Weighted Win Probability (next draw):</div>\n';
-      const pct = (weightedProb * 100).toFixed(2) + '%';
-      rightOut += `  Weighted numerator / denominator → ${pct}\n`;
+      rightOut += '\n<div class="section-title">Weighted Missing Probability (next draw):</div>\n';
+      rightOut += `  ${(weightedProb * 100).toFixed(2)}%\n`;
+
+      rightOut += '\n<div class="section-title">Sequence Factor:</div>\n';
+      rightOut += `  ${(sequenceFactor * 100).toFixed(2)}%  (Pure: ${numPureSeq}, Impure: ${numImpureSeq})\n`;
+
+      rightOut += '\n<div class="section-title">Duplicate Penalty:</div>\n';
+      rightOut += `  −${(duplicateFactor * 100).toFixed(2)}%  (Count: ${dupCount})\n`;
+
+      rightOut += '\n<div class="section-title">Adjusted Win Probability:</div>\n';
+      rightOut += `  ${(adjustedProb * 100).toFixed(2)}%\n`;
 
       rightPane.innerHTML = rightOut;
     });
