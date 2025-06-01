@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Rummy Assistant (Adjusted Win Probability Without Joker Factor)</title>
+  <title>Rummy Assistant (Corrected Pure-Sequence Logic)</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -79,7 +79,7 @@
   </style>
 </head>
 <body>
-  <h1>Rummy Assistant (Adjusted Win Probability Without Joker Factor)</h1>
+  <h1>Rummy Assistant (Corrected Pure-Sequence Logic)</h1>
   <p>
     Enter exactly 13 cards total. For each suit (
     <span class="suit-black">♣</span>, 
@@ -87,7 +87,7 @@
     <span class="suit-red">♥</span>, 
     <span class="suit-black">♠</span>), type your ranks as a <strong>continuous string</strong> (no commas/spaces), using:<br>
     <strong>`A 2 3 4 5 6 7 8 9 T J Q K`</strong>  
-    (where **T** = “10”). Then choose your Wild‐card rank (or leave blank), and specify how many pure Jokers (JOK) you have (0–2).
+    (where **T** = “10”). Then choose your Wild-card rank (or leave blank), and specify how many pure Jokers (JOK) you have (0–2).
   </p>
 
   <div class="input-group">
@@ -227,14 +227,14 @@
       return denom > 0 ? numer / denom : 0;
     }
 
-    // Pure‐sequence detection
+    // Pure-sequence detection: ignore only jokers
     function findPureSequencesForSuit(cards, suit) {
       const presentNums = new Set();
       cards.forEach(c => {
-        if (c === 'JOK') return;
+        if (c === 'JOK') return;              // only skip actual jokers
         if (getSuit(c) === suit) {
           const num = rankMap[getRank(c)];
-          if (num !== undefined) presentNums.add(num);
+          presentNums.add(num);
         }
       });
       const numsArr = Array.from(presentNums).sort((a, b) => a - b);
@@ -250,6 +250,7 @@
           const runCards = [];
           for (let k = runStart; k <= runEnd; k++) {
             const rankStr = invRankMap[numsArr[k]];
+            // Find one card matching this rank & suit in original hand
             for (const c of cards) {
               if (c !== 'JOK' && getSuit(c) === suit && getRank(c) === rankStr) {
                 runCards.push(colorizeCard(c));
@@ -263,6 +264,7 @@
       }
       return sequences;
     }
+
     function findAllPureSequences(cards) {
       const out = [];
       ['♣','♦','♥','♠'].forEach(s => {
@@ -572,7 +574,7 @@
 
       const presentNums = new Set();
       cards.forEach(c => {
-        if (c !== 'JOK' && getSuit(c) === suit) {
+        if (c !== 'JOK' && getSuit(c) === suit && getRank(c) !== designatedWild) {
           presentNums.add(rankMap[getRank(c)]);
         }
       });
