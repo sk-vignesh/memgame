@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Rummy Assistant (Two-Decks + Single-Card Missing)</title>
+  <title>Rummy Assistant (with Duplicate Count)</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -66,20 +66,11 @@
   </style>
 </head>
 <body>
-  <h1>Rummy Assistant (Two-Decks + Single-Card Missing)</h1>
+  <h1>Rummy Assistant (with Duplicate Count)</h1>
   <p>
     Enter exactly 13 cards total. For each suit (♣, ♦, ♥, ♠), type your ranks as a <strong>continuous string</strong> (no commas/spaces), using:<br>
     <strong>`A 2 3 4 5 6 7 8 9 T J Q K`</strong>  
-    (where **T** = “10”). Then choose your Wild-card rank (or leave blank), and specify how many pure Jokers (JOK) you have (0–2).<br><br>
-    <strong>Note on Two Decks:</strong> You may see the same rank-suit twice (e.g. two “8♣”). For any set or sequence, duplicates of the same suit do not count twice in that set. All grouping logic (pure/impure sets, pure/impure sequences) and leftover-point logic remain as before.<br><br>
-    <strong>Updated—Missing Cards for Pure Sequences:</strong><br>
-    Now, if you have two cards in the same suit and no pure sequence in that suit:
-    <ul>
-      <li><strong>Gap = 1</strong> (e.g. 8♣ & 9♣): missing cards are 7♣ and 10♣.</li>
-      <li><strong>Gap = 2</strong> (e.g. 4♣ & 6♣): missing card is 5♣.</li>
-      <li><strong>Gap ≥ 3</strong> (e.g. 6♣ & 9♣): ignore that pair (no missing cards).</li>
-    </ul>
-    If there is already a pure sequence (length ≥ 3) in a suit, no missing cards are reported for that suit.
+    (where **T** = “10”). Then choose your Wild-card rank (or leave blank), and specify how many pure Jokers (JOK) you have (0–2).
   </p>
 
   <div class="input-group">
@@ -137,9 +128,15 @@
     const invRankMap = {};
     Object.keys(rankMap).forEach(r => { invRankMap[rankMap[r]] = r; });
 
-    function normalizeRankChar(ch) { return ch === 'T' ? '10' : ch; }
-    function getRank(card) { return card === 'JOK' ? null : card.slice(0, -1); }
-    function getSuit(card) { return card === 'JOK' ? null : card.slice(-1); }
+    function normalizeRankChar(ch) {
+      return ch === 'T' ? '10' : ch;
+    }
+    function getRank(card) {
+      return card === 'JOK' ? null : card.slice(0, -1);
+    }
+    function getSuit(card) {
+      return card === 'JOK' ? null : card.slice(-1);
+    }
     function cardPointValue(card, designatedWild) {
       if (card === 'JOK') return 0;
       const r = getRank(card);
@@ -148,45 +145,51 @@
       return parseInt(r, 10);
     }
 
+    // Pure sequence detection
     function findPureSequencesForSuit(cards, suit) {
-      const seen = new Set();
-      const list = [];
+      const presentNums = new Set();
       cards.forEach(c => {
         if (c === 'JOK') return;
         if (getSuit(c) === suit) {
           const num = rankMap[getRank(c)];
-          if (!seen.has(num)) {
-            seen.add(num);
-            list.push({ card: c, num });
-          }
+          if (num !== undefined) presentNums.add(num);
         }
       });
-      list.sort((a, b) => a.num - b.num);
-
+      const numsArr = Array.from(presentNums).sort((a,b) => a - b);
       const sequences = [];
-      const nums = list.map(o => o.num);
       let i = 0;
-      while (i < nums.length) {
-        let run = [ list[i] ];
-        let prev = nums[i];
-        let j = i + 1;
-        while (j < nums.length && nums[j] === prev + 1) {
-          run.push(list[j]);
-          prev = nums[j];
-          j++;
+      while (i < numsArr.length) {
+        let runStart = i;
+        let runEnd = i;
+        while (
+          runEnd + 1 < numsArr.length &&
+          numsArr[runEnd + 1] === numsArr[runEnd] + 1
+        ) {
+          runEnd++;
         }
-        if (run.length >= 3) {
-          sequences.push(run.map(o => o.card));
-          i = j;
-        } else {
-          i++;
+        const runLength = runEnd - runStart + 1;
+        if (runLength >= 3) {
+          const runCards = [];
+          for (let k = runStart; k <= runEnd; k++) {
+            const rankStr = invRankMap[numsArr[k]];
+            for (const c of cards) {
+              if (c !== 'JOK' && getSuit(c) === suit && getRank(c) === rankStr) {
+                runCards.push(c);
+                break;
+              }
+            }
+          }
+          sequences.push(runCards);
         }
+        i = runEnd + 1;
       }
       return sequences;
     }
     function findAllPureSequences(cards) {
       const out = [];
-      ['♣','♦','♥','♠'].forEach(s => { out.push(...findPureSequencesForSuit(cards, s)); });
+      ['♣','♦','♥','♠'].forEach(s => {
+        out.push(...findPureSequencesForSuit(cards, s));
+      });
       return out;
     }
 
@@ -251,7 +254,7 @@
                 if (usedJ < pureJokers) { runCards.push('JOK'); usedJ++; }
                 else { runCards.push(designatedCards[usedD]); usedD++; }
               }
-              runCards.sort((a,b) => 
+              runCards.sort((a,b) =>
                 a === 'JOK' ? 1 : (b === 'JOK' ? -1 : rankMap[getRank(a)] - rankMap[getRank(b)])
               );
               const key = JSON.stringify(runCards);
@@ -475,7 +478,6 @@
     }
 
     function getMissingForSuit(cards, suit) {
-      // If there is already a pure sequence in this suit, return []
       const pureSeqs = findPureSequencesForSuit(cards, suit);
       if (pureSeqs.length > 0) return [];
 
@@ -489,7 +491,6 @@
 
       const numsArr = Array.from(presentNums).sort((a,b)=>a-b);
       const missingSet = new Set();
-
       for (let i = 0; i < numsArr.length; i++) {
         for (let j = i + 1; j < numsArr.length; j++) {
           const r1 = numsArr[i], r2 = numsArr[j];
@@ -502,7 +503,6 @@
           }
         }
       }
-
       presentNums.forEach(n => missingSet.delete(n));
       return Array.from(missingSet)
         .sort((a,b)=>a-b)
@@ -515,6 +515,21 @@
         out[s] = getMissingForSuit(cards, s);
       });
       return out;
+    }
+
+    function countDuplicates(cards) {
+      const freq = {};
+      cards.forEach(c => {
+        if (c === 'JOK') return;
+        freq[c] = (freq[c] || 0) + 1;
+      });
+      const dups = [];
+      for (const card in freq) {
+        if (freq[card] > 1) {
+          dups.push(`${card} ×${freq[card]}`);
+        }
+      }
+      return dups;
     }
 
     const clubsInput     = document.getElementById('clubsInput');
@@ -582,12 +597,24 @@
         return;
       }
 
+      // Count duplicates
+      const duplicates = countDuplicates(cards);
+
       const designatedWild = wildRank || null;
       const res = finalResult(cards, designatedWild);
       const missing = getMissingCards(cards);
 
       let out = '';
-      out += '<div class="section-title">All Pure Sequences (length ≥ 3):</div>';
+      out += '<div class="section-title">Duplicates:</div>';
+      if (duplicates.length === 0) {
+        out += '  None\n';
+      } else {
+        duplicates.forEach(d => {
+          out += '  ' + d + '\n';
+        });
+      }
+
+      out += '\n<div class="section-title">All Pure Sequences (length ≥ 3):</div>';
       if (res.pureSeqs.length === 0) out += '  None \n';
       else res.pureSeqs.forEach(seq => { out += '  • ' + seq.join(', ') + '\n'; });
 
