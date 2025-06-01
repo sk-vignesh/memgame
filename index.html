@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Rummy Assistant (with Duplicate Count)</title>
+  <title>Rummy Assistant (with Duplicate Count + A–K⇒Q Missing)</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -66,11 +66,11 @@
   </style>
 </head>
 <body>
-  <h1>Rummy Assistant (with Duplicate Count)</h1>
+  <h1>Rummy Assistant (with Duplicate Count + A–K⇒Q Missing)</h1>
   <p>
     Enter exactly 13 cards total. For each suit (♣, ♦, ♥, ♠), type your ranks as a <strong>continuous string</strong> (no commas/spaces), using:<br>
     <strong>`A 2 3 4 5 6 7 8 9 T J Q K`</strong>  
-    (where **T** = “10”). Then choose your Wild-card rank (or leave blank), and specify how many pure Jokers (JOK) you have (0–2).
+    (where **T** = “10”). Then choose your Wild‐card rank (or leave blank), and specify how many pure Jokers (JOK) you have (0–2).
   </p>
 
   <div class="input-group">
@@ -84,7 +84,7 @@
     </div>
     <div>
       <label for="heartsInput">Hearts (♥):</label>
-      <input type="text" id="heartsInput" placeholder="e.g. 3A2" />
+      <input type="text" id="heartsInput" placeholder="e.g. AK" />
     </div>
     <div>
       <label for="spadesInput">Spades (♠):</label>
@@ -145,7 +145,7 @@
       return parseInt(r, 10);
     }
 
-    // Pure sequence detection
+    // Pure‐sequence detection (unchanged)
     function findPureSequencesForSuit(cards, suit) {
       const presentNums = new Set();
       cards.forEach(c => {
@@ -155,16 +155,12 @@
           if (num !== undefined) presentNums.add(num);
         }
       });
-      const numsArr = Array.from(presentNums).sort((a,b) => a - b);
+      const numsArr = Array.from(presentNums).sort((a, b) => a - b);
       const sequences = [];
       let i = 0;
       while (i < numsArr.length) {
-        let runStart = i;
-        let runEnd = i;
-        while (
-          runEnd + 1 < numsArr.length &&
-          numsArr[runEnd + 1] === numsArr[runEnd] + 1
-        ) {
+        let runStart = i, runEnd = i;
+        while (runEnd + 1 < numsArr.length && numsArr[runEnd + 1] === numsArr[runEnd] + 1) {
           runEnd++;
         }
         const runLength = runEnd - runStart + 1;
@@ -478,6 +474,7 @@
     }
 
     function getMissingForSuit(cards, suit) {
+      // If a pure sequence already exists, return []
       const pureSeqs = findPureSequencesForSuit(cards, suit);
       if (pureSeqs.length > 0) return [];
 
@@ -491,6 +488,8 @@
 
       const numsArr = Array.from(presentNums).sort((a,b)=>a-b);
       const missingSet = new Set();
+
+      // 1) Normal gap=1 or gap=2 logic
       for (let i = 0; i < numsArr.length; i++) {
         for (let j = i + 1; j < numsArr.length; j++) {
           const r1 = numsArr[i], r2 = numsArr[j];
@@ -503,7 +502,14 @@
           }
         }
       }
+
+      // 2) Special A–K ⇒ Q logic (treat Ace as high)
+      if (presentNums.has(1) && presentNums.has(13)) {
+        missingSet.add(12); // rankMap['Q'] === 12
+      }
+
       presentNums.forEach(n => missingSet.delete(n));
+
       return Array.from(missingSet)
         .sort((a,b)=>a-b)
         .map(n => invRankMap[n] + suit);
