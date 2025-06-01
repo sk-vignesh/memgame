@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Rummy Assistant (with Colors & Win Probability)</title>
+  <title>Rummy Assistant (Side‐by‐Side Output & Exclude Wildcard from Missing)</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -47,15 +47,21 @@
       cursor: pointer;
       margin-right: 10px;
     }
-    #result {
+    #outputContainer {
+      display: flex;
+      gap: 20px;
       margin-top: 20px;
+    }
+    .output-pane {
+      flex: 1;
       padding: 12px;
       background: #fff;
       border: 1px solid #ccc;
       border-radius: 4px;
-      min-height: 40px;
+      min-height: 200px;
       white-space: pre-wrap;
       font-family: monospace;
+      overflow: auto;
     }
     .error {
       color: red;
@@ -73,7 +79,7 @@
   </style>
 </head>
 <body>
-  <h1>Rummy Assistant (with Colors & Win Probability)</h1>
+  <h1>Rummy Assistant (Side‐by‐Side Output & Exclude Wildcard from Missing)</h1>
   <p>
     Enter exactly 13 cards total. For each suit (
     <span class="suit-black">♣</span>, 
@@ -129,7 +135,10 @@
   <button id="evaluateBtn">Evaluate</button>
   <button id="clearBtn">Clear</button>
 
-  <div id="result"></div>
+  <div id="outputContainer">
+    <div id="leftPane" class="output-pane"></div>
+    <div id="rightPane" class="output-pane"></div>
+  </div>
 
   <script>
     const rankMap = {
@@ -154,6 +163,20 @@
       if (r === designatedWild) return 0;
       if (['A','10','J','Q','K'].includes(r)) return 10;
       return parseInt(r, 10);
+    }
+
+    function colorizeCard(card) {
+      if (card === 'JOK') return 'JOK';
+      const suit = getSuit(card);
+      const rank = getRank(card);
+      if (suit === '♦' || suit === '♥') {
+        return `<span class="suit-red">${rank}${suit}</span>`;
+      } else {
+        return `<span class="suit-black">${rank}${suit}</span>`;
+      }
+    }
+    function stripColor(colored) {
+      return colored.replace(/<[^>]+>/g, '');
     }
 
     // Pure‐sequence detection
@@ -495,7 +518,7 @@
       return res;
     }
 
-    function getMissingForSuit(cards, suit) {
+    function getMissingForSuit(cards, suit, designatedWild) {
       const pureSeqs = findPureSequencesForSuit(cards, suit);
       if (pureSeqs.length > 0) return [];
 
@@ -510,7 +533,6 @@
       const numsArr = Array.from(presentNums).sort((a,b)=>a-b);
       const missingSet = new Set();
 
-      // Gap=1 or gap=2
       for (let i = 0; i < numsArr.length; i++) {
         for (let j = i + 1; j < numsArr.length; j++) {
           const r1 = numsArr[i], r2 = numsArr[j];
@@ -523,10 +545,15 @@
           }
         }
       }
-
       // A–K ⇒ Q logic
       if (presentNums.has(1) && presentNums.has(13)) {
         missingSet.add(12); // Q
+      }
+
+      // Exclude designated wildcard rank
+      if (designatedWild) {
+        const wildNum = rankMap[designatedWild];
+        missingSet.delete(wildNum);
       }
 
       presentNums.forEach(n => missingSet.delete(n));
@@ -535,10 +562,10 @@
         .map(n => colorizeCard(invRankMap[n] + suit));
     }
 
-    function getMissingCards(cards) {
+    function getMissingCards(cards, designatedWild) {
       const out = {};
       ['♣','♦','♥','♠'].forEach(s => {
-        out[s] = getMissingForSuit(cards, s);
+        out[s] = getMissingForSuit(cards, s, designatedWild);
       });
       return out;
     }
@@ -558,21 +585,6 @@
       return dups;
     }
 
-    function colorizeCard(card) {
-      if (card === 'JOK') return 'JOK';
-      const suit = getSuit(card);
-      const rank = getRank(card);
-      if (suit === '♦' || suit === '♥') {
-        return `<span class="suit-red">${rank}${suit}</span>`;
-      } else {
-        return `<span class="suit-black">${rank}${suit}</span>`;
-      }
-    }
-
-    function stripColor(colored) {
-      return colored.replace(/<[^>]+>/g, '');
-    }
-
     // Calculate probability of drawing one missing card next:
     function calcWinProbability(missingCount) {
       const totalDeck = 106; // 2 × 52 + 2 jokers
@@ -590,10 +602,12 @@
     const jokersInput    = document.getElementById('jokersInput');
     const evaluateBtn    = document.getElementById('evaluateBtn');
     const clearBtn       = document.getElementById('clearBtn');
-    const resultDiv      = document.getElementById('result');
+    const leftPane       = document.getElementById('leftPane');
+    const rightPane      = document.getElementById('rightPane');
 
     evaluateBtn.addEventListener('click', () => {
-      resultDiv.innerHTML = '';
+      leftPane.innerHTML = '';
+      rightPane.innerHTML = '';
 
       function parseSuit(inputText, suitSymbol) {
         const chars = inputText.trim().toUpperCase().split('');
@@ -615,7 +629,7 @@
       const jokersCount = parseInt(jokersRaw, 10);
 
       if (isNaN(jokersCount) || jokersCount < 0 || jokersCount > 2) {
-        resultDiv.innerHTML = '<span class="error">“Jokers” must be 0, 1, or 2.</span>';
+        leftPane.innerHTML = '<span class="error">“Jokers” must be 0, 1, or 2.</span>';
         return;
       }
 
@@ -629,7 +643,7 @@
       for (let i = 0; i < jokersCount; i++) cards.push('JOK');
 
       if (cards.length !== 13) {
-        resultDiv.innerHTML = '<span class="error">Error: You must enter exactly 13 cards total (suits + Jokers). Currently you have ' + cards.length + '.</span>';
+        leftPane.innerHTML = '<span class="error">Error: You must enter exactly 13 cards total (suits + Jokers). Currently you have ' + cards.length + '.</span>';
         return;
       }
 
@@ -642,7 +656,7 @@
         if (!validRanks.includes(r) || !validSuits.includes(s)) invalids.push(c);
       });
       if (invalids.length) {
-        resultDiv.innerHTML = '<span class="error">Invalid card(s): ' + invalids.join(', ') +
+        leftPane.innerHTML = '<span class="error">Invalid card(s): ' + invalids.join(', ') +
                               '.<br>Use ranks A,2–9,T,J,Q,K plus suits ♣,♦,♥,♠.</span>';
         return;
       }
@@ -651,68 +665,72 @@
       const duplicates = countDuplicates(cards);
 
       const designatedWild = wildRank || null;
-      const res = finalResult(cards.map(c => c), designatedWild);
-      const missing = getMissingCards(cards);
+      const res = finalResult(cards.slice(), designatedWild);
+      const missing = getMissingCards(cards, designatedWild);
 
-      // Count how many missing cards (strip HTML, count unique)
+      // Count how many missing cards
       let missingFlat = [];
       ['♣','♦','♥','♠'].forEach(s => {
         missingFlat = missingFlat.concat(missing[s]);
       });
-      // Each entry in missingFlat is colored HTML; strip tags to count distinct ranksuits
       const missingRaw = missingFlat.map(stripColor);
       const missingCount = missingRaw.length;
 
       const prob = calcWinProbability(missingCount);
 
-      let out = '';
-      out += '<div class="section-title">Duplicates:</div>\n';
+      // LEFT PANE: Groups, Leftovers, Total Points
+      let leftOut = '';
+      leftOut += '<div class="section-title">Duplicates:</div>\n';
       if (duplicates.length === 0) {
-        out += '  None\n';
+        leftOut += '  None\n';
       } else {
         duplicates.forEach(d => {
-          out += '  ' + d + '\n';
+          leftOut += '  ' + d + '\n';
         });
       }
 
-      out += '\n<div class="section-title">All Pure Sequences (length ≥ 3):</div>\n';
-      if (res.pureSeqs.length === 0) out += '  None \n';
-      else res.pureSeqs.forEach(seq => { out += '  • ' + seq.join(', ') + '\n'; });
+      leftOut += '\n<div class="section-title">All Pure Sequences (length ≥ 3):</div>\n';
+      if (res.pureSeqs.length === 0) leftOut += '  None \n';
+      else res.pureSeqs.forEach(seq => { leftOut += '  • ' + seq.join(', ') + '\n'; });
 
-      out += '\n<div class="section-title">All Pure Sets (length ≥ 3):</div>\n';
-      if (res.pureSets.length === 0) out += '  None \n';
-      else res.pureSets.forEach(setGrp => { out += '  • ' + setGrp.join(', ') + '\n'; });
+      leftOut += '\n<div class="section-title">All Pure Sets (length ≥ 3):</div>\n';
+      if (res.pureSets.length === 0) leftOut += '  None \n';
+      else res.pureSets.forEach(setGrp => { leftOut += '  • ' + setGrp.join(', ') + '\n'; });
 
-      out += '\n<div class="section-title">All Impure Sets (length ≥ 3, using wild/JOK):</div>\n';
-      if (res.impureSets.length === 0) out += '  None \n';
-      else res.impureSets.forEach(setGrp => { out += '  • ' + setGrp.join(', ') + '\n'; });
+      leftOut += '\n<div class="section-title">All Impure Sets (length ≥ 3, using wild/JOK):</div>\n';
+      if (res.impureSets.length === 0) leftOut += '  None \n';
+      else res.impureSets.forEach(setGrp => { leftOut += '  • ' + setGrp.join(', ') + '\n'; });
 
-      out += '\n<div class="section-title">All Impure Sequences (length ≥ 3):</div>\n';
-      if (res.impureSeqs.length === 0) out += '  None \n';
-      else res.impureSeqs.forEach(seq => { out += '  • ' + seq.join(', ') + '\n'; });
+      leftOut += '\n<div class="section-title">All Impure Sequences (length ≥ 3):</div>\n';
+      if (res.impureSeqs.length === 0) leftOut += '  None \n';
+      else res.impureSeqs.forEach(seq => { leftOut += '  • ' + seq.join(', ') + '\n'; });
 
-      out += '\n<div class="section-title">Leftover Cards (counted as points):</div>\n';
-      if (res.leftover.length === 0) out += '  None \n';
+      leftOut += '\n<div class="section-title">Leftover Cards (counted as points):</div>\n';
+      if (res.leftover.length === 0) leftOut += '  None \n';
       else {
         const coloredLeftover = res.leftover.map(colorizeCard).join(', ');
-        out += '  ' + coloredLeftover + '\n';
+        leftOut += '  ' + coloredLeftover + '\n';
       }
 
-      out += '\n<div class="section-title">Missing Cards for Pure Sequences:</div>\n';
+      leftOut += '\n<div class="section-title">Total Points (capped at 80):</div>\n';
+      leftOut += '  ' + res.points + '\n';
+
+      leftPane.innerHTML = leftOut;
+
+      // RIGHT PANE: Missing Cards & Probability
+      let rightOut = '';
+      rightOut += '<div class="section-title">Missing Cards for Pure Sequences:</div>\n';
       ['♣','♦','♥','♠'].forEach(s => {
         const arr = missing[s];
-        if (arr.length === 0) out += `  ${colorizeCard('1' + s).slice(0,0)}${s}: None\n`;
-        else out += `  ${s}: ` + arr.join(', ') + `\n`;
+        if (arr.length === 0) rightOut += `  ${s}: None\n`;
+        else rightOut += `  ${s}: ` + arr.join(', ') + `\n`;
       });
 
-      out += '\n<div class="section-title">Win Probability (next draw):</div>\n';
+      rightOut += '\n<div class="section-title">Win Probability (next draw):</div>\n';
       const pct = (prob * 100).toFixed(2) + '%';
-      out += `  ${missingCount} missing / 93 unknown → ${pct}\n`;
+      rightOut += `  ${missingCount} missing / 93 unknown → ${pct}\n`;
 
-      out += '\n<div class="section-title">Total Points (capped at 80):</div>\n';
-      out += '  ' + res.points + '\n';
-
-      resultDiv.innerHTML = out;
+      rightPane.innerHTML = rightOut;
     });
 
     clearBtn.addEventListener('click', () => {
@@ -722,7 +740,8 @@
       spadesInput.value   = '';
       wildRankSelect.value= '';
       jokersInput.value   = '0';
-      resultDiv.innerHTML = '';
+      leftPane.innerHTML  = '';
+      rightPane.innerHTML = '';
     });
   </script>
 </body>
